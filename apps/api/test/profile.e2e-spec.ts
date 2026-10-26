@@ -1,17 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { createApp, signedInAgent } from './app';
-
-export const onboarding = {
-  sex: 'male',
-  birthDate: '1995-03-12',
-  heightCm: 185,
-  weightKg: 113,
-  activity: 'light',
-  goal: 'lose',
-  targetWeightKg: 95,
-  healthDataConsent: true,
-  today: '2026-10-26',
-};
+import { onboarding } from './fixtures';
 
 describe('profile & targets', () => {
   let app: INestApplication;
