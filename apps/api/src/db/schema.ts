@@ -20,6 +20,9 @@ export const activityEnum = pgEnum('activity_level', ['sedentary', 'light', 'mod
 export const unitSystemEnum = pgEnum('unit_system', ['metric', 'imperial']);
 export const mealEnum = pgEnum('meal', ['breakfast', 'lunch', 'dinner', 'snack']);
 export const foodSourceEnum = pgEnum('food_source', ['seed', 'user', 'open_food_facts']);
+export const moduleEnum = pgEnum('module', ['barcode', 'insights', 'recipes', 'data', 'all']);
+export const entitlementSourceEnum = pgEnum('entitlement_source', ['stripe', 'grant']);
+export const entitlementStatusEnum = pgEnum('entitlement_status', ['active', 'past_due', 'canceled']);
 export const localeEnum = pgEnum('locale', ['en', 'bg']);
 export const targetSourceEnum = pgEnum('target_source', ['questionnaire', 'manual', 'adaptive']);
 
@@ -40,6 +43,7 @@ export const users = pgTable('users', {
   tokenVersion: integer('token_version').notNull().default(0),
   /** UI language; also used for anything the server writes in the user's language. */
   locale: localeEnum('locale').notNull().default('en'),
+  stripeCustomerId: text('stripe_customer_id').unique(),
   ...timestamps,
 });
 
@@ -113,6 +117,9 @@ export const foods = pgTable(
     fatG: real('fat_g').notNull(),
     carbsG: real('carbs_g').notNull(),
     fiberG: real('fiber_g'),
+    sugarG: real('sugar_g'),
+    satFatG: real('sat_fat_g'),
+    sodiumMg: real('sodium_mg'),
     servingG: real('serving_g'),
     servingName: text('serving_name'),
     servingNameBg: text('serving_name_bg'),
@@ -149,6 +156,10 @@ export const recipes = pgTable(
     proteinG: real('protein_g').notNull(),
     fatG: real('fat_g').notNull(),
     carbsG: real('carbs_g').notNull(),
+    fiberG: real('fiber_g'),
+    sugarG: real('sugar_g'),
+    satFatG: real('sat_fat_g'),
+    sodiumMg: real('sodium_mg'),
     /** null = public catalogue recipe */
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'cascade' }),
     ...timestamps,
@@ -182,6 +193,11 @@ export const diaryEntries = pgTable(
     proteinG: real('protein_g').notNull(),
     fatG: real('fat_g').notNull(),
     carbsG: real('carbs_g').notNull(),
+    /** Secondary nutrients; null when the source has no data for them. */
+    fiberG: real('fiber_g'),
+    sugarG: real('sugar_g'),
+    satFatG: real('sat_fat_g'),
+    sodiumMg: real('sodium_mg'),
     isEstimate: boolean('is_estimate').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     /** Soft delete enables undo */
@@ -204,6 +220,34 @@ export const weightEntries = pgTable(
   (t) => [uniqueIndex('weight_user_date_uq').on(t.userId, t.date)],
 );
 
+/**
+ * Paid modules a user can use. Stripe subscriptions and manual grants (e.g.
+ * paid outside the app) are rows here; access = any active row for the module
+ * or for 'all' whose period has not ended.
+ */
+export const entitlements = pgTable(
+  'entitlements',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    module: moduleEnum('module').notNull(),
+    source: entitlementSourceEnum('source').notNull(),
+    status: entitlementStatusEnum('status').notNull().default('active'),
+    /** null = no end (grants); otherwise access ends after this moment. */
+    currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
+    stripeSubscriptionId: text('stripe_subscription_id'),
+    note: text('note'),
+    ...timestamps,
+  },
+  (t) => [
+    index('entitlements_user_idx').on(t.userId),
+    uniqueIndex('entitlements_subscription_module_uq').on(t.stripeSubscriptionId, t.module).where(sql`${t.stripeSubscriptionId} is not null`),
+    uniqueIndex('entitlements_grant_uq').on(t.userId, t.module).where(sql`${t.source} = 'grant'`),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type Profile = typeof profiles.$inferSelect;
 export type TargetSet = typeof targetSets.$inferSelect;
@@ -213,3 +257,5 @@ export type DiaryEntry = typeof diaryEntries.$inferSelect;
 export type WeightEntry = typeof weightEntries.$inferSelect;
 export type MealType = (typeof mealEnum.enumValues)[number];
 export type Locale = (typeof localeEnum.enumValues)[number];
+export type PaidModule = (typeof moduleEnum.enumValues)[number];
+export type Entitlement = typeof entitlements.$inferSelect;

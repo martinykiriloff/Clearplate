@@ -232,3 +232,36 @@ export function weightTrend(points: { date: string; weightKg: number }[], alpha 
     return { ...p, trendKg: Math.round(trend * 10) / 10 };
   });
 }
+
+export interface NutrientGoals {
+  /** At least this much (14 g per 1000 kcal, Dietary Guidelines for Americans). */
+  fiberMinG: number;
+  /** At most this much (under 10% of calories, WHO / DGA). */
+  satFatMaxG: number;
+  /** At most this much (2300 mg, DGA / EFSA ~2000 mg). */
+  sodiumMaxMg: number;
+}
+
+export function nutrientGoals(calories: number): NutrientGoals {
+  return {
+    fiberMinG: Math.round((calories / 1000) * 14),
+    satFatMaxG: Math.round((calories * 0.1) / 9),
+    sodiumMaxMg: 2300,
+  };
+}
+
+/** Share of calories from protein, fat and carbs (Atwater 4/9/4), in whole percent summing to 100. */
+export function macroSplit({ proteinG, fatG, carbsG }: { proteinG: number; fatG: number; carbsG: number }): { protein: number; fat: number; carbs: number } {
+  const kcal = { protein: proteinG * 4, fat: fatG * 9, carbs: carbsG * 4 };
+  const total = kcal.protein + kcal.fat + kcal.carbs;
+  if (total <= 0) return { protein: 0, fat: 0, carbs: 0 };
+  // Largest-remainder rounding so the three always add up to exactly 100.
+  const raw = (Object.keys(kcal) as (keyof typeof kcal)[]).map((k) => ({ k, v: (kcal[k] / total) * 100 }));
+  const floored = raw.map((r) => ({ ...r, f: Math.floor(r.v) }));
+  let rest = 100 - floored.reduce((s, r) => s + r.f, 0);
+  for (const r of [...floored].sort((a, b) => b.v - b.f - (a.v - a.f))) {
+    if (rest-- <= 0) break;
+    r.f += 1;
+  }
+  return Object.fromEntries(floored.map((r) => [r.k, r.f])) as { protein: number; fat: number; carbs: number };
+}

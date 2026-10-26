@@ -15,7 +15,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiProperty, ApiTags } from '@nestjs/swagger';
-import { remaining } from '@clearplate/targets';
+import { macroSplit, nutrientGoals, remaining } from '@clearplate/targets';
 import { Type } from 'class-transformer';
 import { IsBoolean, IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { and, asc, desc, eq, isNull, lte, sql } from 'drizzle-orm';
@@ -101,6 +101,26 @@ export class AddEntryDto {
   isEstimate?: boolean;
 }
 
+export class CopyDto {
+  @IsDateString({ strict: true })
+  fromDate: string;
+
+  @IsDateString({ strict: true })
+  toDate: string;
+
+  /** Copy only this meal; omit to copy the whole day. */
+  @ApiProperty({ enum: MEALS, required: false })
+  @IsOptional()
+  @IsIn(MEALS)
+  meal?: MealType;
+
+  /** Put the copies into this meal instead of the original one. */
+  @ApiProperty({ enum: MEALS, required: false })
+  @IsOptional()
+  @IsIn(MEALS)
+  toMeal?: MealType;
+}
+
 export class UpdateEntryDto {
   @ApiProperty({ enum: MEALS, required: false })
   @IsOptional()
@@ -140,6 +160,44 @@ function sum(entries: Pick<DiaryEntry, 'kcal' | 'proteinG' | 'fatG' | 'carbsG'>[
   return { calories: Math.round(t.calories), proteinG: r1(t.proteinG), fatG: r1(t.fatG), carbsG: r1(t.carbsG) };
 }
 
+type Secondary = { fiberG: number | null; sugarG: number | null; satFatG: number | null; sodiumMg: number | null };
+const scaleSecondary = (src: Secondary, f: number): Secondary => ({
+  fiberG: src.fiberG == null ? null : src.fiberG * f,
+  sugarG: src.sugarG == null ? null : src.sugarG * f,
+  satFatG: src.satFatG == null ? null : src.satFatG * f,
+  sodiumMg: src.sodiumMg == null ? null : src.sodiumMg * f,
+});
+
+export interface NutrientTotals {
+  fiberG: number;
+  sugarG: number;
+  satFatG: number;
+  sodiumMg: number;
+  /**
+   * Share of the day's calories that come from entries with known secondary
+   * nutrient data (0–100). Below 100 the totals are a lower bound.
+   */
+  coveragePct: number;
+}
+
+function sumNutrients(entries: DiaryEntry[]): NutrientTotals {
+  let fiberG = 0;
+  let sugarG = 0;
+  let satFatG = 0;
+  let sodiumMg = 0;
+  let known = 0;
+  let total = 0;
+  for (const e of entries) {
+    total += e.kcal;
+    if (e.fiberG != null || e.sugarG != null || e.satFatG != null || e.sodiumMg != null) known += e.kcal;
+    fiberG += e.fiberG ?? 0;
+    sugarG += e.sugarG ?? 0;
+    satFatG += e.satFatG ?? 0;
+    sodiumMg += e.sodiumMg ?? 0;
+  }
+  return { fiberG: r1(fiberG), sugarG: r1(sugarG), satFatG: r1(satFatG), sodiumMg: Math.round(sodiumMg), coveragePct: total > 0 ? Math.round((known / total) * 100) : 100 };
+}
+
 const entryView = (e: DiaryEntry) => ({
   id: e.id,
   date: e.date,
@@ -154,6 +212,10 @@ const entryView = (e: DiaryEntry) => ({
   proteinG: r1(e.proteinG),
   fatG: r1(e.fatG),
   carbsG: r1(e.carbsG),
+  fiberG: e.fiberG == null ? null : r1(e.fiberG),
+  sugarG: e.sugarG == null ? null : r1(e.sugarG),
+  satFatG: e.satFatG == null ? null : r1(e.satFatG),
+  sodiumMg: e.sodiumMg == null ? null : Math.round(e.sodiumMg),
   isEstimate: e.isEstimate,
   createdAt: e.createdAt,
 });
@@ -187,6 +249,7 @@ export class DiaryService {
         proteinG: food.proteinG * f,
         fatG: food.fatG * f,
         carbsG: food.carbsG * f,
+        ...scaleSecondary(food, f),
         isEstimate: dto.isEstimate ?? false,
       };
     } else if (dto.recipeId) {
@@ -202,6 +265,7 @@ export class DiaryService {
         proteinG: recipe.proteinG * servings,
         fatG: recipe.fatG * servings,
         carbsG: recipe.carbsG * servings,
+        ...scaleSecondary(recipe, servings),
         isEstimate: dto.isEstimate ?? false,
       };
     } else {
@@ -253,6 +317,7 @@ export class DiaryService {
         proteinG: entry.proteinG * factor,
         fatG: entry.fatG * factor,
         carbsG: entry.carbsG * factor,
+        ...scaleSecondary(entry, factor),
         isEstimate: dto.isEstimate ?? entry.isEstimate,
       })
       .where(eq(diaryEntries.id, id))
@@ -282,7 +347,33 @@ export class DiaryService {
       const list = entries.filter((e) => e.meal === meal);
       return { meal, totals: sum(list), entries: list.map(entryView) };
     });
-    return { date, totals: sum(entries), meals };
+    return { date, totals: sum(entries), nutrients: sumNutrients(entries), meals };
+  }
+
+  /**
+   * Repeats a past day's meal (or whole day) on another day — the most common
+   * logging action for people who eat similar things. Copies are new entries.
+   */
+  async copy(userId: string, dto: CopyDto) {
+    const from = parseDateParam(dto.fromDate);
+    const to = parseDateParam(dto.toDate);
+    if (from === to && !dto.toMeal) throw new BadRequestException('Pick a different day or meal to copy to');
+    const source = await this.db
+      .select()
+      .from(diaryEntries)
+      .where(
+        and(
+          eq(diaryEntries.userId, userId),
+          eq(diaryEntries.date, from),
+          isNull(diaryEntries.deletedAt),
+          dto.meal ? eq(diaryEntries.meal, dto.meal) : undefined,
+        ),
+      )
+      .orderBy(asc(diaryEntries.createdAt));
+    if (!source.length) return { copied: 0, entries: [] };
+    const rows = source.map(({ id: _id, createdAt: _c, deletedAt: _d, ...rest }) => ({ ...rest, date: to, meal: dto.toMeal ?? rest.meal }));
+    const inserted = await this.db.insert(diaryEntries).values(rows).returning();
+    return { copied: inserted.length, entries: inserted.map(entryView) };
   }
 
   /** Consecutive days with at least one entry, ending today (or yesterday if today is still empty). */
@@ -386,10 +477,14 @@ export class TodayService {
     ]);
     const left = targets ? remaining(targets, day.totals) : null;
     const nextBestFood = left ? await this.suggestions.nextBestFood(userId, day.meals, left, hour) : null;
+    const goals = targets ? nutrientGoals(targets.calories) : null;
     return {
       date,
       targets,
       eaten: day.totals,
+      nutrients: day.nutrients,
+      nutrientGoals: goals,
+      split: { eaten: macroSplit(day.totals), target: targets ? macroSplit(targets) : null },
       remaining: left,
       progress: targets ? Math.round((day.totals.calories / targets.calories) * 100) : null,
       meals: day.meals,
@@ -437,6 +532,12 @@ export class DiaryController {
   @Delete('diary/:id')
   remove(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.diary.remove(user.id, id);
+  }
+
+  /** Repeat a meal or a whole day from another date. */
+  @Post('diary/copy')
+  copy(@CurrentUser() user: AuthUser, @Body() dto: CopyDto) {
+    return this.diary.copy(user.id, dto);
   }
 
   /** Undo a delete. */

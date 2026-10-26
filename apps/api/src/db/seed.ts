@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { foods, recipes } from './schema';
 import { FOOD_SEED } from './seed-data/foods';
 import { FOOD_NAMES_BG, SERVING_NAMES_BG } from './seed-data/foods.bg';
+import { FOOD_NUTRIENTS, RECIPE_NUTRIENTS } from './seed-data/nutrients';
 import { RECIPE_SEED } from './seed-data/recipes';
 import { RECIPES_BG } from './seed-data/recipes.bg';
 
@@ -31,6 +32,9 @@ export async function seed(databaseUrl: string): Promise<{ foods: number; recipe
         fatG,
         carbsG,
         fiberG,
+        sugarG: FOOD_NUTRIENTS[name]?.[0] ?? null,
+        satFatG: FOOD_NUTRIENTS[name]?.[1] ?? null,
+        sodiumMg: FOOD_NUTRIENTS[name]?.[2] ?? null,
         servingG,
         servingName,
         servingNameBg: servingName ? (SERVING_NAMES_BG[servingName] ?? null) : null,
@@ -55,7 +59,18 @@ export async function seed(databaseUrl: string): Promise<{ foods: number; recipe
       await db.insert(recipes).values(
         RECIPE_SEED.map((r) => {
           const bg = RECIPES_BG[r.name];
-          return { ...r, servings: 1, nameBg: bg?.name ?? null, ingredientsBg: bg?.ingredients ?? null, methodBg: bg?.method ?? null };
+          const nut = RECIPE_NUTRIENTS[r.name];
+          return {
+            ...r,
+            servings: 1,
+            nameBg: bg?.name ?? null,
+            ingredientsBg: bg?.ingredients ?? null,
+            methodBg: bg?.method ?? null,
+            fiberG: nut?.[0] ?? null,
+            sugarG: nut?.[1] ?? null,
+            satFatG: nut?.[2] ?? null,
+            sodiumMg: nut?.[3] ?? null,
+          };
         }),
       );
       insertedRecipes = RECIPE_SEED.length;
@@ -70,6 +85,20 @@ export async function seed(databaseUrl: string): Promise<{ foods: number; recipe
           .returning({ id: recipes.id });
         translated += res.length;
       }
+    }
+
+    // Secondary nutrients for catalogue rows seeded before they existed.
+    for (const [name, [sugarG, satFatG, sodiumMg]] of Object.entries(FOOD_NUTRIENTS)) {
+      await db
+        .update(foods)
+        .set({ sugarG, satFatG, sodiumMg })
+        .where(and(eq(foods.source, 'seed'), eq(foods.name, name), isNull(foods.sugarG)));
+    }
+    for (const [name, [fiberG, sugarG, satFatG, sodiumMg]] of Object.entries(RECIPE_NUTRIENTS)) {
+      await db
+        .update(recipes)
+        .set({ fiberG, sugarG, satFatG, sodiumMg })
+        .where(and(isNull(recipes.ownerId), eq(recipes.name, name), isNull(recipes.sugarG)));
     }
 
     return { foods: insertedFoods, recipes: insertedRecipes, translated };

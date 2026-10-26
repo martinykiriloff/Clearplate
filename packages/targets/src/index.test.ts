@@ -99,3 +99,22 @@ describe('weightTrend', () => {
     expect(t[2].trendKg).toBe(113);
   });
 });
+
+import { macroSplit, nutrientGoals } from './index';
+
+describe('nutrientGoals', () => {
+  it('scales fiber and saturated fat with calories', () => {
+    expect(nutrientGoals(2000)).toEqual({ fiberMinG: 28, satFatMaxG: 22, sodiumMaxMg: 2300 });
+  });
+});
+
+describe('macroSplit', () => {
+  it('returns calorie shares that always sum to 100', () => {
+    const s = macroSplit({ proteinG: 174, fatG: 71, carbsG: 254 });
+    expect(s.protein + s.fat + s.carbs).toBe(100);
+    expect(s.protein).toBe(30);
+  });
+  it('is zero for an empty day', () => {
+    expect(macroSplit({ proteinG: 0, fatG: 0, carbsG: 0 })).toEqual({ protein: 0, fat: 0, carbs: 0 });
+  });
+});

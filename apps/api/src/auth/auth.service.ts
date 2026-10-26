@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { and, eq, sql } from 'drizzle-orm';
+import { EntitlementsService } from '../billing/entitlements.service';
 import { Database, InjectDb } from '../db/db.module';
 import { oauthAccounts, profiles, users } from '../db/schema';
 import { LocaleCode, LoginDto, RegisterDto, UpdateMeDto } from './dto';
@@ -29,6 +30,7 @@ export class AuthService {
     @InjectDb() private readonly db: Database,
     private readonly jwt: JwtService,
     config: ConfigService,
+    private readonly entitlements: EntitlementsService,
   ) {
     this.sessionMaxAgeMs = durationMs(config.get<string>('JWT_EXPIRES_IN') ?? '7d');
   }
@@ -41,6 +43,7 @@ export class AuthService {
       .onConflictDoNothing({ target: users.email })
       .returning({ id: users.id });
     if (!inserted.length) throw new ConflictException('An account with this email already exists');
+    await this.entitlements.applyGrants(inserted[0].id, dto.email);
     return this.publicUser(inserted[0].id);
   }
 
@@ -89,6 +92,7 @@ export class AuthService {
       await tx.insert(oauthAccounts).values({ userId: id, provider, providerAccountId }).onConflictDoNothing();
       return id;
     });
+    await this.entitlements.applyGrants(userId, normalized);
     return this.publicUser(userId);
   }
 

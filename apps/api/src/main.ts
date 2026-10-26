@@ -11,7 +11,8 @@ async function bootstrap() {
     Logger.log('Database migrations applied', 'Bootstrap');
   }
 
-  const app = await NestFactory.create(AppModule);
+  // rawBody: Stripe webhook signatures are computed over the exact bytes.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   configureApp(app);
   const port = app.get(ConfigService).get<string>('API_PORT') ?? '4000';
   await app.listen(Number(port), '0.0.0.0');
