@@ -97,7 +97,10 @@ export class RecipesService {
   list(userId: string, query: ListRecipesQuery) {
     const term = query.q?.trim();
     const conditions = [this.visibleTo(userId)];
-    if (term) conditions.push(ilike(recipes.name, `%${term.replace(/[\\%_]/g, '\\$&')}%`));
+    if (term) {
+      const like = `%${term.replace(/[\\%_]/g, '\\$&')}%`;
+      conditions.push(or(ilike(recipes.name, like), ilike(recipes.nameBg, like))!);
+    }
     if (query.mealType) conditions.push(eq(recipes.mealType, query.mealType));
     if (query.maxKcal != null) conditions.push(sql`${recipes.kcal} <= ${query.maxKcal}`);
     return this.db

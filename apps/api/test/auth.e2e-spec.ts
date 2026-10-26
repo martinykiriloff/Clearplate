@@ -20,6 +20,15 @@ describe('auth', () => {
     expect(cookie).toMatch(/SameSite=Lax/);
   });
 
+  it('stores the UI language and lets the user change it', async () => {
+    const agent = request.agent(app.getHttpServer());
+    const res = await agent.post('/api/auth/register').send({ email: 'bg@example.com', password, locale: 'bg' }).expect(201);
+    expect(res.body.user.locale).toBe('bg');
+    await agent.patch('/api/auth/me').send({ locale: 'en', name: 'Ivan' }).expect(200);
+    await agent.get('/api/auth/me').expect((r) => expect(r.body).toMatchObject({ locale: 'en', name: 'Ivan' }));
+    await agent.patch('/api/auth/me').send({ locale: 'de' }).expect(400);
+  });
+
   it('rejects a duplicate email and weak passwords', async () => {
     await request(app.getHttpServer()).post('/api/auth/register').send({ email, password }).expect(409);
     await request(app.getHttpServer()).post('/api/auth/register').send({ email: 'new@example.com', password: 'short' }).expect(400);

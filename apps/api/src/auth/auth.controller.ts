@@ -1,11 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { AuthService, PublicUser } from './auth.service';
 import { AuthUser, CurrentUser, Public } from './decorators';
-import { LoginDto, RegisterDto } from './dto';
+import { LoginDto, RegisterDto, UpdateMeDto } from './dto';
 import { clearSessionCookie, setSessionCookie } from './session';
 import { enabledProviders, FacebookGuard, GoogleGuard } from './social.strategies';
 
@@ -50,6 +50,12 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: AuthUser) {
     return this.auth.publicUser(user.id);
+  }
+
+  /** Update display name or UI language. */
+  @Patch('me')
+  updateMe(@CurrentUser() user: AuthUser, @Body() dto: UpdateMeDto) {
+    return this.auth.updateMe(user.id, dto);
   }
 
   /** Signs out on every device by revoking all issued tokens. */

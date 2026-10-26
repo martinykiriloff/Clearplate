@@ -73,6 +73,7 @@ export class CreateFoodDto {
 const publicColumns = {
   id: foods.id,
   name: foods.name,
+  nameBg: foods.nameBg,
   brand: foods.brand,
   barcode: foods.barcode,
   category: foods.category,
@@ -83,6 +84,7 @@ const publicColumns = {
   fiberG: foods.fiberG,
   servingG: foods.servingG,
   servingName: foods.servingName,
+  servingNameBg: foods.servingNameBg,
   source: foods.source,
   verified: foods.verified,
 };
@@ -97,8 +99,8 @@ export class FoodsService {
   }
 
   /**
-   * Prefix matches first, then substring, then trigram similarity (typo tolerant).
-   * Uses the GIN trigram index on foods.name.
+   * Searches English and Bulgarian names. Prefix matches first, then substring,
+   * then trigram similarity (typo tolerant). Uses the GIN trigram indexes.
    */
   async search(userId: string, q: string | undefined, limit = 20) {
     const term = (q ?? '').trim();
@@ -110,8 +112,17 @@ export class FoodsService {
     return this.db
       .select(publicColumns)
       .from(foods)
-      .where(and(this.visibleTo(userId), or(ilike(foods.name, like), ilike(foods.brand, like), sql`${foods.name} % ${term}`)))
-      .orderBy(desc(sql`${foods.name} ilike ${prefix}`), desc(sql`similarity(${foods.name}, ${term})`), foods.name)
+      .where(
+        and(
+          this.visibleTo(userId),
+          or(ilike(foods.name, like), ilike(foods.nameBg, like), ilike(foods.brand, like), sql`${foods.name} % ${term}`, sql`${foods.nameBg} % ${term}`),
+        ),
+      )
+      .orderBy(
+        desc(sql`(${foods.name} ilike ${prefix} or coalesce(${foods.nameBg}, '') ilike ${prefix})`),
+        desc(sql`greatest(similarity(${foods.name}, ${term}), similarity(coalesce(${foods.nameBg}, ''), ${term}))`),
+        foods.name,
+      )
       .limit(limit);
   }
 

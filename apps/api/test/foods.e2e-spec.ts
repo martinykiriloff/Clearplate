@@ -46,6 +46,15 @@ describe('foods', () => {
     expect(res.body.some((f: { name: string }) => f.name === 'Secret family pie')).toBe(false);
   });
 
+  it('searches Bulgarian names too, typo tolerant', async () => {
+    const { agent } = await signedInAgent(app);
+    const res = await agent.get(`/api/foods?q=${encodeURIComponent('сьомга')}`).expect(200);
+    expect(res.body[0].nameBg.toLowerCase().startsWith('сьомга')).toBe(true);
+    expect(res.body[0].name).toMatch(/Salmon/);
+    const typo = await agent.get(`/api/foods?q=${encodeURIComponent('кашкавл')}`).expect(200);
+    expect(typo.body.some((f: { nameBg: string }) => f.nameBg === 'Кашкавал')).toBe(true);
+  });
+
   it('validates custom food input', async () => {
     const { agent } = await signedInAgent(app);
     await agent.post('/api/foods').send({ name: 'Bad', kcal: 100, proteinG: 120, fatG: 0, carbsG: 0 }).expect(400);

@@ -5,7 +5,7 @@ import * as argon2 from 'argon2';
 import { and, eq, sql } from 'drizzle-orm';
 import { Database, InjectDb } from '../db/db.module';
 import { oauthAccounts, profiles, users } from '../db/schema';
-import { LoginDto, RegisterDto } from './dto';
+import { LocaleCode, LoginDto, RegisterDto, UpdateMeDto } from './dto';
 import { durationMs } from './session';
 
 export type SocialProvider = 'google' | 'facebook';
@@ -14,6 +14,7 @@ export interface PublicUser {
   id: string;
   email: string;
   name: string | null;
+  locale: LocaleCode;
   onboarded: boolean;
 }
 
@@ -36,7 +37,7 @@ export class AuthService {
     const passwordHash = await argon2.hash(dto.password, { type: argon2.argon2id });
     const inserted = await this.db
       .insert(users)
-      .values({ email: dto.email, passwordHash, name: dto.name ?? null })
+      .values({ email: dto.email, passwordHash, name: dto.name ?? null, locale: dto.locale ?? 'en' })
       .onConflictDoNothing({ target: users.email })
       .returning({ id: users.id });
     if (!inserted.length) throw new ConflictException('An account with this email already exists');
@@ -93,13 +94,21 @@ export class AuthService {
 
   async publicUser(userId: string): Promise<PublicUser> {
     const [row] = await this.db
-      .select({ id: users.id, email: users.email, name: users.name, profileUserId: profiles.userId })
+      .select({ id: users.id, email: users.email, name: users.name, locale: users.locale, profileUserId: profiles.userId })
       .from(users)
       .leftJoin(profiles, eq(profiles.userId, users.id))
       .where(eq(users.id, userId))
       .limit(1);
     if (!row) throw new UnauthorizedException();
-    return { id: row.id, email: row.email, name: row.name, onboarded: row.profileUserId != null };
+    return { id: row.id, email: row.email, name: row.name, locale: row.locale, onboarded: row.profileUserId != null };
+  }
+
+  async updateMe(userId: string, dto: UpdateMeDto): Promise<PublicUser> {
+    const set: Partial<typeof users.$inferInsert> = {};
+    if (dto.name !== undefined) set.name = dto.name.trim() || null;
+    if (dto.locale !== undefined) set.locale = dto.locale;
+    if (Object.keys(set).length) await this.db.update(users).set(set).where(eq(users.id, userId));
+    return this.publicUser(userId);
   }
 
   /** The token carries the user's token version; bumping it revokes all sessions. */

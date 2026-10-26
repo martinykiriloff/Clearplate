@@ -20,6 +20,7 @@ export const activityEnum = pgEnum('activity_level', ['sedentary', 'light', 'mod
 export const unitSystemEnum = pgEnum('unit_system', ['metric', 'imperial']);
 export const mealEnum = pgEnum('meal', ['breakfast', 'lunch', 'dinner', 'snack']);
 export const foodSourceEnum = pgEnum('food_source', ['seed', 'user', 'open_food_facts']);
+export const localeEnum = pgEnum('locale', ['en', 'bg']);
 export const targetSourceEnum = pgEnum('target_source', ['questionnaire', 'manual', 'adaptive']);
 
 const timestamps = {
@@ -37,6 +38,8 @@ export const users = pgTable('users', {
   name: text('name'),
   /** Incremented to revoke every issued token (logout everywhere, account takeover defence). */
   tokenVersion: integer('token_version').notNull().default(0),
+  /** UI language; also used for anything the server writes in the user's language. */
+  locale: localeEnum('locale').notNull().default('en'),
   ...timestamps,
 });
 
@@ -100,6 +103,8 @@ export const foods = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
+    /** Bulgarian name; null = same as `name` (e.g. a brand name). */
+    nameBg: text('name_bg'),
     brand: text('brand'),
     barcode: text('barcode'),
     category: text('category'),
@@ -110,6 +115,7 @@ export const foods = pgTable(
     fiberG: real('fiber_g'),
     servingG: real('serving_g'),
     servingName: text('serving_name'),
+    servingNameBg: text('serving_name_bg'),
     source: foodSourceEnum('source').notNull().default('seed'),
     verified: boolean('verified').notNull().default(false),
     /** Owner of a private custom food; null = catalogue. Deleted with the user (GDPR). */
@@ -118,6 +124,7 @@ export const foods = pgTable(
   },
   (t) => [
     index('foods_name_trgm_idx').using('gin', sql`${t.name} gin_trgm_ops`),
+    index('foods_name_bg_trgm_idx').using('gin', sql`${t.nameBg} gin_trgm_ops`),
     // A barcode is unique in the catalogue and per user, never across users.
     uniqueIndex('foods_catalogue_barcode_uq').on(t.barcode).where(sql`${t.createdById} is null and ${t.barcode} is not null`),
     uniqueIndex('foods_user_barcode_uq').on(t.createdById, t.barcode).where(sql`${t.createdById} is not null and ${t.barcode} is not null`),
@@ -129,10 +136,13 @@ export const recipes = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
+    nameBg: text('name_bg'),
     mealType: mealEnum('meal_type').notNull(),
     base: text('base'),
     ingredients: text('ingredients').notNull(),
+    ingredientsBg: text('ingredients_bg'),
     method: text('method').notNull(),
+    methodBg: text('method_bg'),
     servings: integer('servings').notNull().default(1),
     /** Per serving */
     kcal: real('kcal').notNull(),
@@ -147,6 +157,7 @@ export const recipes = pgTable(
     index('recipes_meal_idx').on(t.mealType),
     index('recipes_owner_idx').on(t.ownerId),
     index('recipes_name_trgm_idx').using('gin', sql`${t.name} gin_trgm_ops`),
+    index('recipes_name_bg_trgm_idx').using('gin', sql`${t.nameBg} gin_trgm_ops`),
   ],
 );
 
@@ -163,6 +174,8 @@ export const diaryEntries = pgTable(
     foodId: uuid('food_id').references(() => foods.id, { onDelete: 'set null' }),
     recipeId: uuid('recipe_id').references(() => recipes.id, { onDelete: 'set null' }),
     label: text('label').notNull(),
+    /** Bulgarian label snapshot when the source food/recipe has one. */
+    labelBg: text('label_bg'),
     grams: real('grams'),
     servings: real('servings'),
     kcal: real('kcal').notNull(),
@@ -199,3 +212,4 @@ export type Recipe = typeof recipes.$inferSelect;
 export type DiaryEntry = typeof diaryEntries.$inferSelect;
 export type WeightEntry = typeof weightEntries.$inferSelect;
 export type MealType = (typeof mealEnum.enumValues)[number];
+export type Locale = (typeof localeEnum.enumValues)[number];

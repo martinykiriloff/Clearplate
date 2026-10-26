@@ -21,7 +21,7 @@ describe('diary & today', () => {
     const [recipe] = (await agent.get('/api/recipes?mealType=lunch&limit=1').expect(200)).body;
 
     const food = await agent.post('/api/diary').send({ date, meal: 'breakfast', foodId: yogurt.id, grams: 400 }).expect(201);
-    expect(food.body).toMatchObject({ grams: 400, kcal: Math.round(yogurt.kcal * 4), isEstimate: false });
+    expect(food.body).toMatchObject({ grams: 400, kcal: Math.round(yogurt.kcal * 4), isEstimate: false, labelBg: 'Гръцко кисело мляко 2%' });
 
     await agent.post('/api/diary').send({ date, meal: 'lunch', recipeId: recipe.id, servings: 1 }).expect(201);
     const quick = await agent.post('/api/diary').send({ date, meal: 'snack', quick: { label: 'Coffee with milk', kcal: 40 } }).expect(201);
@@ -80,7 +80,8 @@ describe('diary & today', () => {
     expect(t.weight.weightKg).toBe(112.4);
     expect(t.nextBestFood).toMatchObject({ meal: 'lunch' });
     expect(t.nextBestFood.kcal).toBeLessThanOrEqual(t.remaining.calories);
-    expect(t.nextBestFood.reason).toMatch(/protein/);
+    expect(t.nextBestFood.reason).toMatchObject({ kind: 'protein_gap' });
+    expect(t.nextBestFood.nameBg).toBeTruthy();
 
     const evening = (await agent.get(`/api/today?date=${date}&hour=19`).expect(200)).body;
     expect(evening.nextBestFood.meal).toBe('dinner');

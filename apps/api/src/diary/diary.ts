@@ -145,6 +145,7 @@ const entryView = (e: DiaryEntry) => ({
   date: e.date,
   meal: e.meal,
   label: e.label,
+  labelBg: e.labelBg,
   foodId: e.foodId,
   recipeId: e.recipeId,
   grams: e.grams,
@@ -180,6 +181,7 @@ export class DiaryService {
         ...base,
         foodId: food.id,
         label: food.brand ? `${food.name} (${food.brand})` : food.name,
+        labelBg: food.nameBg ? (food.brand ? `${food.nameBg} (${food.brand})` : food.nameBg) : null,
         grams,
         kcal: food.kcal * f,
         proteinG: food.proteinG * f,
@@ -194,6 +196,7 @@ export class DiaryService {
         ...base,
         recipeId: recipe.id,
         label: recipe.name,
+        labelBg: recipe.nameBg,
         servings,
         kcal: recipe.kcal * servings,
         proteinG: recipe.proteinG * servings,
@@ -304,10 +307,11 @@ export class DiaryService {
 export interface NextBestFood {
   recipeId: string;
   name: string;
+  nameBg: string | null;
   meal: MealType;
   kcal: number;
   proteinG: number;
-  reason: string;
+  reason: { kind: 'protein_gap'; coveredG: number; gapG: number } | { kind: 'fits_budget'; leftKcal: number };
 }
 
 /**
@@ -347,12 +351,20 @@ export class SuggestionService {
     const score = (r: (typeof candidates)[number]) => Math.min(r.proteinG, proteinGap || r.proteinG) / Math.max(r.kcal, 1) + (r.kcal / budget) * 0.02;
     const best = candidates.reduce((a, b) => (score(b) > score(a) ? b : a));
 
-    const covered = Math.round(Math.min(best.proteinG, proteinGap));
-    const reason =
+    // The reason is returned as data so each client can phrase it in its own language.
+    const reason: NextBestFood['reason'] =
       proteinGap >= 10
-        ? `Covers ${covered} g of your remaining ${Math.round(proteinGap)} g protein and keeps you within budget.`
-        : `Fits your remaining ${Math.round(left.calories)} kcal with plenty of protein.`;
-    return { recipeId: best.id, name: best.name, meal: nextMeal, kcal: Math.round(best.kcal), proteinG: Math.round(best.proteinG), reason };
+        ? { kind: 'protein_gap', coveredG: Math.round(Math.min(best.proteinG, proteinGap)), gapG: Math.round(proteinGap) }
+        : { kind: 'fits_budget', leftKcal: Math.round(left.calories) };
+    return {
+      recipeId: best.id,
+      name: best.name,
+      nameBg: best.nameBg,
+      meal: nextMeal,
+      kcal: Math.round(best.kcal),
+      proteinG: Math.round(best.proteinG),
+      reason,
+    };
   }
 }
 
