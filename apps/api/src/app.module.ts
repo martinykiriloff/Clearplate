@@ -8,6 +8,7 @@ import { DbModule } from './db/db.module';
 import { FoodsModule } from './foods/foods';
 import { HealthController } from './health/health.controller';
 import { ProfileModule } from './profile/profile.module';
+import { RecipesModule } from './recipes/recipes';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { ProfileModule } from './profile/profile.module';
     AuthModule,
     ProfileModule,
     FoodsModule,
+    RecipesModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
