@@ -74,6 +74,23 @@ pnpm --filter @clearplate/api test:e2e      # API e2e, needs Postgres; uses TEST
 pnpm --filter @clearplate/web lint          # typecheck + eslint
 ```
 
+## Languages
+
+English and Bulgarian, end to end:
+
+- Every page lives under `/en/...` or `/bg/...` (both prerendered). Unprefixed URLs redirect to the
+  remembered language (`cp_locale` cookie), else the browser's `Accept-Language`.
+- UI strings: `apps/web/src/i18n/en.ts` and `bg.ts` (`bg` is type-checked against the English shape,
+  so a missing translation fails the build). Numbers and dates use `Intl` (`en-US` / `bg-BG`).
+- The user's language is saved on the account (`users.locale`) and restored at login; the EN/BG switch
+  is in the header and in Settings.
+- Content: foods and recipes carry Bulgarian names/texts (`name_bg`, `ingredients_bg`, `method_bg`);
+  search matches both languages. The API returns structured data (e.g. the next-best-food reason) so
+  clients phrase it themselves.
+
+Adding a language: add it to `LOCALES` in `apps/web/src/i18n/config.ts`, add a dictionary, extend the
+`locale` enum in the API schema.
+
 ## Status (web v1 thin slice)
 
 - Email + password auth, optional Google / Facebook, account deletion (GDPR Art. 17)

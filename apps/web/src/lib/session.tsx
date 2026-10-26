@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import useSWR from "swr";
+import { useI18n } from "@/i18n/provider";
 import { api, ApiError, fetcher, type User } from "./api";
 
 /** Current user, or null when signed out. */
@@ -24,13 +25,14 @@ export function useUser() {
  */
 export function useRequireUser({ allowNotOnboarded = false } = {}) {
   const router = useRouter();
+  const { href } = useI18n();
   const { user, isLoading, failed, mutate } = useUser();
   useEffect(() => {
     if (isLoading) return;
     // Clear a stale cookie first, otherwise the proxy would bounce /login back here.
-    if (user === null) void api("/auth/logout", { method: "POST" }).finally(() => router.replace("/login"));
-    else if (user && !user.onboarded && !allowNotOnboarded) router.replace("/onboarding");
-  }, [user, isLoading, allowNotOnboarded, router]);
+    if (user === null) void api("/auth/logout", { method: "POST" }).finally(() => router.replace(href("/login")));
+    else if (user && !user.onboarded && !allowNotOnboarded) router.replace(href("/onboarding"));
+  }, [user, isLoading, allowNotOnboarded, router, href]);
   const ready = !!user && (allowNotOnboarded || user.onboarded);
   return { user: ready ? user : undefined, failed, mutate };
 }

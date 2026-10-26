@@ -9,10 +9,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, fetcher, MEAL_LABEL, MEALS, type Meal, type Recipe, type Today } from "@/lib/api";
-import { fmt, localIsoDate } from "@/lib/utils";
+import { useI18n } from "@/i18n/provider";
+import { api, fetcher, MEALS, type Meal, type Recipe, type Today } from "@/lib/api";
+import { localIsoDate } from "@/lib/utils";
 
 export function RecipesView() {
+  const { t, n, pick } = useI18n();
+  const r = t.recipes;
   const [q, setQ] = useState("");
   const [meal, setMeal] = useState<Meal | "">("");
   const [fitsOnly, setFitsOnly] = useState(false);
@@ -32,50 +35,49 @@ export function RecipesView() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold">Recipes</h1>
-        <p className="text-muted-foreground">Sorted by protein per calorie, so the most filling options come first.</p>
+        <h1 className="text-2xl font-semibold">{r.title}</h1>
+        <p className="text-muted-foreground">{r.lead}</p>
       </div>
 
       <div className="flex flex-wrap items-end gap-4">
         <div className="flex min-w-56 flex-[2_1_280px] flex-col gap-2">
-          <Label htmlFor="recipe-q">Search</Label>
-          <Input id="recipe-q" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="e.g. salmon" />
+          <Label htmlFor="recipe-q">{r.search}</Label>
+          <Input id="recipe-q" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={r.searchPlaceholder} />
         </div>
         <div className="flex min-w-40 flex-[1_1_160px] flex-col gap-2">
-          <Label htmlFor="recipe-meal">Meal</Label>
+          <Label htmlFor="recipe-meal">{r.meal}</Label>
           <NativeSelect id="recipe-meal" value={meal} onChange={(e) => setMeal(e.target.value as Meal | "")}>
-            <option value="">All meals</option>
+            <option value="">{r.allMeals}</option>
             {MEALS.map((m) => (
               <option key={m} value={m}>
-                {MEAL_LABEL[m]}
+                {t.meals[m]}
               </option>
             ))}
           </NativeSelect>
         </div>
         <label className="flex min-h-12 cursor-pointer items-center gap-3 text-sm">
           <input type="checkbox" className="size-5 accent-[var(--primary)]" checked={fitsOnly} onChange={(e) => setFitsOnly(e.target.checked)} disabled={left == null} />
-          Fits what&apos;s left today{left != null ? ` (${fmt(Math.max(0, left))} kcal)` : ""}
+          {r.fits}
+          {left != null ? ` (${n(Math.max(0, left))} ${t.common.kcal})` : ""}
         </label>
       </div>
 
       {!data ? (
         <Skeleton className="h-64 w-full" />
       ) : data.length === 0 ? (
-        <p className="text-muted-foreground">No recipes match. Try another word or meal.</p>
+        <p className="text-muted-foreground">{r.noMatch}</p>
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data.map((r) => (
-            <li key={r.id} className="flex flex-col gap-3 rounded-xl border bg-card p-5">
+          {data.map((recipe) => (
+            <li key={recipe.id} className="flex flex-col gap-3 rounded-xl border bg-card p-5">
               <div className="text-xs font-semibold tracking-[0.06em] text-muted-foreground uppercase">
-                {MEAL_LABEL[r.mealType]}
-                {r.ownerId ? " · Yours" : ""}
+                {t.meals[recipe.mealType]}
+                {recipe.ownerId ? r.yours : ""}
               </div>
-              <h2 className="text-lg leading-snug font-semibold">{r.name}</h2>
-              <p className="tabular text-sm">
-                {fmt(r.kcal)} kcal · {fmt(r.proteinG)} g P · {fmt(r.fatG)} g F · {fmt(r.carbsG)} g C
-              </p>
-              <Button variant="outline" className="mt-auto self-start" onClick={() => setOpen(r)}>
-                View &amp; add
+              <h2 className="text-lg leading-snug font-semibold">{pick(recipe.name, recipe.nameBg)}</h2>
+              <p className="tabular text-sm">{r.macros(n(recipe.kcal), n(recipe.proteinG), n(recipe.fatG), n(recipe.carbsG))}</p>
+              <Button variant="outline" className="mt-auto self-start" onClick={() => setOpen(recipe)}>
+                {r.viewAdd}
               </Button>
             </li>
           ))}
@@ -90,8 +92,11 @@ export function RecipesView() {
 }
 
 function RecipeDetail({ recipe, date, onDone }: { recipe: Recipe; date: string; onDone: () => void }) {
+  const { t, n, pick, errorText } = useI18n();
+  const r = t.recipes;
   const [meal, setMeal] = useState<Meal>(recipe.mealType);
   const [pending, setPending] = useState(false);
+  const name = pick(recipe.name, recipe.nameBg);
   return (
     <form
       className="flex flex-col gap-5"
@@ -100,41 +105,39 @@ function RecipeDetail({ recipe, date, onDone }: { recipe: Recipe; date: string; 
         setPending(true);
         try {
           await api("/diary", { method: "POST", json: { date, meal, recipeId: recipe.id, servings: 1 } });
-          toast.success(`Added ${recipe.name} to ${MEAL_LABEL[meal].toLowerCase()}`);
+          toast.success(t.addFood.addedTo(name, t.mealsInline[meal]));
           onDone();
         } catch (err) {
-          toast.error(err instanceof Error ? err.message : "Could not add");
+          toast.error(errorText(err));
           setPending(false);
         }
       }}
     >
       <DialogHeader>
-        <DialogTitle>{recipe.name}</DialogTitle>
-        <DialogDescription className="tabular">
-          Per serving: {fmt(recipe.kcal)} kcal · {fmt(recipe.proteinG)} g protein · {fmt(recipe.fatG)} g fat · {fmt(recipe.carbsG)} g carbs
-        </DialogDescription>
+        <DialogTitle>{name}</DialogTitle>
+        <DialogDescription className="tabular">{r.perServingLine(n(recipe.kcal), n(recipe.proteinG), n(recipe.fatG), n(recipe.carbsG))}</DialogDescription>
       </DialogHeader>
       <div>
-        <h3 className="text-sm font-semibold">Ingredients</h3>
-        <p className="mt-1 text-[15px] leading-relaxed text-muted-foreground">{recipe.ingredients}</p>
+        <h3 className="text-sm font-semibold">{r.ingredients}</h3>
+        <p className="mt-1 text-[15px] leading-relaxed text-muted-foreground">{pick(recipe.ingredients, recipe.ingredientsBg)}</p>
       </div>
       <div>
-        <h3 className="text-sm font-semibold">Method</h3>
-        <p className="mt-1 text-[15px] leading-relaxed text-muted-foreground">{recipe.method}</p>
+        <h3 className="text-sm font-semibold">{r.method}</h3>
+        <p className="mt-1 text-[15px] leading-relaxed text-muted-foreground">{pick(recipe.method, recipe.methodBg)}</p>
       </div>
       <div className="flex flex-col gap-2">
-        <Label htmlFor="detail-meal">Add to</Label>
+        <Label htmlFor="detail-meal">{r.addTo}</Label>
         <NativeSelect id="detail-meal" value={meal} onChange={(e) => setMeal(e.target.value as Meal)}>
           {MEALS.map((m) => (
             <option key={m} value={m}>
-              {MEAL_LABEL[m]} today
+              {r.todaySuffix(t.meals[m])}
             </option>
           ))}
         </NativeSelect>
       </div>
       <DialogFooter>
         <Button type="submit" disabled={pending}>
-          Add 1 serving
+          {r.addServing}
         </Button>
       </DialogFooter>
     </form>

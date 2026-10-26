@@ -28,7 +28,8 @@ const nextConfig: NextConfig = {
     },
   },
   async rewrites() {
-    return [{ source: "/api/:path*", destination: `${apiInternalUrl}/api/:path*` }];
+    // beforeFiles: /api must win over the [lang] dynamic segment.
+    return { beforeFiles: [{ source: "/api/:path*", destination: `${apiInternalUrl}/api/:path*` }], afterFiles: [], fallback: [] };
   },
   async headers() {
     return [

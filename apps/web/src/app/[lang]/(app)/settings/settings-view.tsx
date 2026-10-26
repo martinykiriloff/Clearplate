@@ -3,24 +3,19 @@
 import Link from "next/link";
 import { useState } from "react";
 import useSWR from "swr";
+import { LocaleSwitch } from "@/components/app/locale-switch";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useI18n } from "@/i18n/provider";
 import { api, fetcher, type Profile, type Targets } from "@/lib/api";
 import { hardNavigate, useUser } from "@/lib/session";
-import { fmt, localIsoDate } from "@/lib/utils";
-
-const GOAL: Record<Profile["goal"], string> = { lose: "Lose fat", gain: "Build muscle", habits: "Eat better, same weight" };
-const ACTIVITY: Record<Profile["activity"], string> = {
-  sedentary: "Mostly sitting",
-  light: "Lightly active",
-  moderate: "Moderately active",
-  active: "Very active",
-  very_active: "Athlete or physical job",
-};
+import { localIsoDate } from "@/lib/utils";
 
 export function SettingsView() {
+  const { t, n, href } = useI18n();
+  const s = t.settings;
   const { user } = useUser();
   const { data } = useSWR<{ profile: Profile; targets: Targets | null }>(`/profile?date=${localIsoDate()}`, fetcher);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -28,48 +23,54 @@ export function SettingsView() {
 
   async function logout(everywhere = false) {
     await api(everywhere ? "/auth/logout-all" : "/auth/logout", { method: "POST" });
-    hardNavigate("/login");
+    hardNavigate(href("/login"));
   }
 
   return (
     <div className="flex max-w-3xl flex-col gap-6">
-      <h1 className="text-2xl font-semibold">Settings</h1>
+      <h1 className="text-2xl font-semibold">{s.title}</h1>
 
       <section className="flex flex-col gap-4 rounded-xl border bg-card p-6">
-        <h2 className="text-xs font-semibold tracking-[0.06em] text-muted-foreground uppercase">Account</h2>
+        <h2 className="text-xs font-semibold tracking-[0.06em] text-muted-foreground uppercase">{s.account}</h2>
         <p>{user?.email}</p>
         <div className="flex flex-wrap gap-3">
           <Button variant="outline" onClick={() => void logout()}>
-            Log out
+            {s.logout}
           </Button>
           <Button variant="ghost" onClick={() => void logout(true)}>
-            Log out on all devices
+            {s.logoutAll}
           </Button>
         </div>
       </section>
 
+      <section className="flex flex-col gap-3 rounded-xl border bg-card p-6">
+        <h2 className="text-xs font-semibold tracking-[0.06em] text-muted-foreground uppercase">{s.language}</h2>
+        <p className="text-sm text-muted-foreground">{s.languageHint}</p>
+        <LocaleSwitch signedIn className="self-start" />
+      </section>
+
       {data && (
         <section className="flex flex-col gap-4 rounded-xl border bg-card p-6">
-          <h2 className="text-xs font-semibold tracking-[0.06em] text-muted-foreground uppercase">Your plan</h2>
+          <h2 className="text-xs font-semibold tracking-[0.06em] text-muted-foreground uppercase">{s.plan}</h2>
           <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-            <Row k="Goal" v={GOAL[data.profile.goal]} />
-            <Row k="Activity" v={ACTIVITY[data.profile.activity]} />
-            <Row k="Pace" v={data.profile.pace} />
-            <Row k="Units" v={data.profile.unitSystem} />
-            {data.targets && <Row k="Daily calories" v={`${fmt(data.targets.calories)} kcal`} />}
-            {data.targets && <Row k="Protein / fat / carbs" v={`${fmt(data.targets.proteinG)} / ${fmt(data.targets.fatG)} / ${fmt(data.targets.carbsG)} g`} />}
+            <Row k={s.goal} v={t.onboarding.goals[data.profile.goal][0]} />
+            <Row k={s.activity} v={t.onboarding.activity[data.profile.activity][0]} />
+            <Row k={s.pace} v={s.paces[data.profile.pace]} />
+            <Row k={s.units} v={s.unitNames[data.profile.unitSystem]} />
+            {data.targets && <Row k={s.calories} v={`${n(data.targets.calories)} ${t.common.kcal}`} />}
+            {data.targets && <Row k={s.macros} v={`${n(data.targets.proteinG)} / ${n(data.targets.fatG)} / ${n(data.targets.carbsG)} ${t.common.g}`} />}
           </dl>
           <Button asChild variant="outline" className="self-start">
-            <Link href="/onboarding">Redo the questionnaire</Link>
+            <Link href={href("/onboarding")}>{s.redo}</Link>
           </Button>
         </section>
       )}
 
       <section className="flex flex-col gap-4 rounded-xl border border-destructive/40 bg-card p-6">
-        <h2 className="text-xs font-semibold tracking-[0.06em] text-destructive uppercase">Delete account</h2>
-        <p className="text-sm text-muted-foreground">Permanently deletes your account, questionnaire, diary, weigh-ins and recipes. This cannot be undone.</p>
+        <h2 className="text-xs font-semibold tracking-[0.06em] text-destructive uppercase">{s.deleteTitle}</h2>
+        <p className="text-sm text-muted-foreground">{s.deleteLead}</p>
         <Button variant="destructive" className="self-start" onClick={() => setConfirmDelete(true)}>
-          Delete my account
+          {s.deleteButton}
         </Button>
       </section>
 
@@ -80,20 +81,20 @@ export function SettingsView() {
             onSubmit={async (e) => {
               e.preventDefault();
               await api("/auth/me", { method: "DELETE" });
-              hardNavigate("/");
+              hardNavigate(href("/"));
             }}
           >
             <DialogHeader>
-              <DialogTitle>Delete everything?</DialogTitle>
-              <DialogDescription>Type DELETE to confirm. All your data is removed right away.</DialogDescription>
+              <DialogTitle>{s.confirmTitle}</DialogTitle>
+              <DialogDescription>{s.confirmLead}</DialogDescription>
             </DialogHeader>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="confirm">Confirmation</Label>
+              <Label htmlFor="confirm">{s.confirmation}</Label>
               <Input id="confirm" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />
             </div>
             <DialogFooter>
-              <Button type="submit" variant="destructive" disabled={typed !== "DELETE"}>
-                Delete permanently
+              <Button type="submit" variant="destructive" disabled={typed.trim().toUpperCase() !== s.confirmWord}>
+                {s.deleteForever}
               </Button>
             </DialogFooter>
           </form>
@@ -107,7 +108,7 @@ function Row({ k, v }: { k: string; v: string }) {
   return (
     <div>
       <dt className="text-sm text-muted-foreground">{k}</dt>
-      <dd className="capitalize">{v}</dd>
+      <dd>{v}</dd>
     </div>
   );
 }

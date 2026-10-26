@@ -7,24 +7,27 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
-import { api, MEAL_LABEL, MEALS, type DiaryEntry, type Meal, type MealGroup } from "@/lib/api";
-import { fmt, fmt1 } from "@/lib/utils";
+import { useI18n, type I18n } from "@/i18n/provider";
+import { api, MEALS, type DiaryEntry, type Meal, type MealGroup } from "@/lib/api";
 
-function describe(e: DiaryEntry) {
-  if (e.grams != null) return `${fmt(e.grams)} g`;
-  if (e.servings != null) return `${fmt1(e.servings)} serving${e.servings === 1 ? "" : "s"}`;
-  return "Quick add";
+function describe(e: DiaryEntry, { t, n, n1 }: I18n) {
+  if (e.grams != null) return `${n(e.grams)} ${t.common.g}`;
+  if (e.servings != null) return t.mealList.servings(n1(e.servings), e.servings === 1);
+  return t.mealList.quickAdd;
 }
 
 export function MealList({ meals, onChange }: { meals: MealGroup[]; onChange: () => void }) {
+  const i18n = useI18n();
+  const { t, n, n1, pick } = i18n;
   const [editing, setEditing] = useState<DiaryEntry | null>(null);
+  const label = (e: DiaryEntry) => pick(e.label, e.labelBg);
 
   async function remove(entry: DiaryEntry) {
     await api(`/diary/${entry.id}`, { method: "DELETE" });
     onChange();
-    toast(`Removed ${entry.label}`, {
+    toast(t.mealList.removed(label(entry)), {
       action: {
-        label: "Undo",
+        label: t.common.undo,
         onClick: async () => {
           await api(`/diary/${entry.id}/restore`, { method: "POST" });
           onChange();
@@ -38,33 +41,35 @@ export function MealList({ meals, onChange }: { meals: MealGroup[]; onChange: ()
       {meals.map((group) => (
         <section key={group.meal} aria-labelledby={`meal-${group.meal}`} className="flex flex-col">
           <h3 id={`meal-${group.meal}`} className="flex justify-between border-b pt-5 pb-2 text-xs font-semibold tracking-[0.06em] text-muted-foreground uppercase first:pt-0">
-            <span>{MEAL_LABEL[group.meal]}</span>
-            <span className="tabular normal-case">{fmt(group.totals.calories)} kcal</span>
+            <span>{t.meals[group.meal]}</span>
+            <span className="tabular normal-case">
+              {n(group.totals.calories)} {t.common.kcal}
+            </span>
           </h3>
           {group.entries.length === 0 ? (
-            <p className="py-3 text-sm text-muted-foreground">Nothing logged yet.</p>
+            <p className="py-3 text-sm text-muted-foreground">{t.mealList.nothing}</p>
           ) : (
             <ul>
               {group.entries.map((e) => (
                 <li key={e.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b py-2 last:border-b-0">
                   <div className="min-w-0 flex-[1_1_240px] py-1">
-                    <div className="font-medium">{e.label}</div>
+                    <div className="font-medium">{label(e)}</div>
                     <div className={e.isEstimate ? "text-sm text-estimate" : "text-sm text-muted-foreground"}>
-                      {describe(e)}
-                      {e.isEstimate ? " · Estimate — adjust if you know the amount" : ""}
+                      {describe(e, i18n)}
+                      {e.isEstimate ? t.mealList.estimateNote : ""}
                     </div>
                   </div>
                   <div className="tabular text-sm">
-                    {fmt(e.kcal)} kcal · {fmt1(e.proteinG)} g P
+                    {n(e.kcal)} {t.common.kcal} · {n1(e.proteinG)} {t.common.g} {t.common.pShort}
                   </div>
                   <div className="flex">
                     {(e.grams != null || e.servings != null) && (
-                      <Button variant="link" size="sm" onClick={() => setEditing(e)} aria-label={`Edit ${e.label}`}>
-                        Edit
+                      <Button variant="link" size="sm" onClick={() => setEditing(e)} aria-label={t.mealList.editAria(label(e))}>
+                        {t.common.edit}
                       </Button>
                     )}
-                    <Button variant="link" size="sm" onClick={() => void remove(e)} aria-label={`Remove ${e.label}`}>
-                      Remove
+                    <Button variant="link" size="sm" onClick={() => void remove(e)} aria-label={t.mealList.removeAria(label(e))}>
+                      {t.common.remove}
                     </Button>
                   </div>
                 </li>
@@ -93,12 +98,13 @@ export function MealList({ meals, onChange }: { meals: MealGroup[]; onChange: ()
 }
 
 function EditEntry({ entry, onSaved }: { entry: DiaryEntry; onSaved: () => void }) {
+  const { t, pick, errorText } = useI18n();
   const byGrams = entry.grams != null;
   const [amount, setAmount] = useState(String(byGrams ? entry.grams : entry.servings));
   const [meal, setMeal] = useState<Meal>(entry.meal);
   const [estimate, setEstimate] = useState(entry.isEstimate);
   const [pending, setPending] = useState(false);
-  const n = Number(amount);
+  const amountN = Number(amount);
 
   return (
     <form
@@ -107,29 +113,29 @@ function EditEntry({ entry, onSaved }: { entry: DiaryEntry; onSaved: () => void 
         e.preventDefault();
         setPending(true);
         try {
-          await api(`/diary/${entry.id}`, { method: "PATCH", json: { meal, isEstimate: estimate, ...(byGrams ? { grams: n } : { servings: n }) } });
+          await api(`/diary/${entry.id}`, { method: "PATCH", json: { meal, isEstimate: estimate, ...(byGrams ? { grams: amountN } : { servings: amountN }) } });
           onSaved();
         } catch (err) {
-          toast.error(err instanceof Error ? err.message : "Could not save");
+          toast.error(errorText(err));
           setPending(false);
         }
       }}
     >
       <DialogHeader>
-        <DialogTitle>{entry.label}</DialogTitle>
-        <DialogDescription>Change the amount or move it to another meal.</DialogDescription>
+        <DialogTitle>{pick(entry.label, entry.labelBg)}</DialogTitle>
+        <DialogDescription>{t.mealList.editLead}</DialogDescription>
       </DialogHeader>
       <div className="flex flex-wrap gap-4">
         <div className="flex flex-1 flex-col gap-2">
-          <Label htmlFor="edit-amount">{byGrams ? "Grams" : "Servings"}</Label>
+          <Label htmlFor="edit-amount">{byGrams ? t.mealList.grams : t.mealList.servingsLabel}</Label>
           <Input id="edit-amount" type="number" inputMode="decimal" min={byGrams ? 1 : 0.25} step={byGrams ? 1 : 0.25} value={amount} onChange={(e) => setAmount(e.target.value)} />
         </div>
         <div className="flex flex-1 flex-col gap-2">
-          <Label htmlFor="edit-meal">Meal</Label>
+          <Label htmlFor="edit-meal">{t.mealList.meal}</Label>
           <NativeSelect id="edit-meal" value={meal} onChange={(e) => setMeal(e.target.value as Meal)}>
             {MEALS.map((m) => (
               <option key={m} value={m}>
-                {MEAL_LABEL[m]}
+                {t.meals[m]}
               </option>
             ))}
           </NativeSelect>
@@ -137,11 +143,11 @@ function EditEntry({ entry, onSaved }: { entry: DiaryEntry; onSaved: () => void 
       </div>
       <label className="flex cursor-pointer items-center gap-3 text-sm">
         <input type="checkbox" className="size-5 accent-[var(--primary)]" checked={estimate} onChange={(e) => setEstimate(e.target.checked)} />
-        This amount is an estimate
+        {t.mealList.isEstimate}
       </label>
       <DialogFooter>
-        <Button type="submit" disabled={pending || !(n > 0)}>
-          Save
+        <Button type="submit" disabled={pending || !(amountN > 0)}>
+          {t.common.save}
         </Button>
       </DialogFooter>
     </form>

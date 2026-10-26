@@ -38,12 +38,12 @@ export const fetcher = <T,>(path: string) => api<T>(path);
 
 export type Meal = "breakfast" | "lunch" | "dinner" | "snack";
 export const MEALS: Meal[] = ["breakfast", "lunch", "dinner", "snack"];
-export const MEAL_LABEL: Record<Meal, string> = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snacks" };
 
 export interface User {
   id: string;
   email: string;
   name: string | null;
+  locale: "en" | "bg";
   onboarded: boolean;
 }
 
@@ -67,6 +67,7 @@ export interface DiaryEntry {
   date: string;
   meal: Meal;
   label: string;
+  labelBg: string | null;
   foodId: string | null;
   recipeId: string | null;
   grams: number | null;
@@ -94,10 +95,11 @@ export interface WeightSummary {
 export interface NextBestFood {
   recipeId: string;
   name: string;
+  nameBg: string | null;
   meal: Meal;
   kcal: number;
   proteinG: number;
-  reason: string;
+  reason: { kind: "protein_gap"; coveredG: number; gapG: number } | { kind: "fits_budget"; leftKcal: number };
 }
 
 export interface Today {
@@ -115,6 +117,7 @@ export interface Today {
 export interface Food {
   id: string;
   name: string;
+  nameBg: string | null;
   brand: string | null;
   barcode: string | null;
   category: string | null;
@@ -125,6 +128,7 @@ export interface Food {
   fiberG: number | null;
   servingG: number | null;
   servingName: string | null;
+  servingNameBg: string | null;
   source: "seed" | "user" | "open_food_facts";
   verified: boolean;
 }
@@ -132,10 +136,13 @@ export interface Food {
 export interface Recipe {
   id: string;
   name: string;
+  nameBg: string | null;
   mealType: Meal;
   base: string | null;
   ingredients: string;
+  ingredientsBg: string | null;
   method: string;
+  methodBg: string | null;
   servings: number;
   kcal: number;
   proteinG: number;

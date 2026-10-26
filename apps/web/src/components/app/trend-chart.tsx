@@ -1,12 +1,15 @@
-import { fmt1 } from "@/lib/utils";
+"use client";
+
+import { useI18n } from "@/i18n/provider";
 
 /**
  * Minimal SVG trend: dots are raw weigh-ins, the line is the smoothed trend.
- * Decorative for screen readers; the numbers are shown as text next to it.
+ * Values are passed in the display unit.
  */
-export function TrendChart({ points, height = 120, label }: { points: { date: string; weightKg: number; trendKg: number }[]; height?: number; label: string }) {
+export function TrendChart({ points, height = 120, label, unit }: { points: { date: string; weightKg: number; trendKg: number }[]; height?: number; label: string; unit: string }) {
+  const { t, n1, shortDate } = useI18n();
   if (points.length < 2) {
-    return <p className="text-sm text-muted-foreground">Log at least two weigh-ins to see a trend.</p>;
+    return <p className="text-sm text-muted-foreground">{t.progress.needTwo}</p>;
   }
   const w = 600;
   const pad = 8;
@@ -26,12 +29,10 @@ export function TrendChart({ points, height = 120, label }: { points: { date: st
         ))}
         <polyline points={line} fill="none" stroke="var(--primary)" strokeWidth={2.5} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
       </svg>
-      <figcaption className="flex justify-between text-xs text-muted-foreground">
-        <span>{points[0].date}</span>
-        <span>
-          Range {fmt1(min)}–{fmt1(max)} kg
-        </span>
-        <span>{points[points.length - 1].date}</span>
+      <figcaption className="flex justify-between gap-2 text-xs text-muted-foreground">
+        <span>{shortDate(points[0].date)}</span>
+        <span>{t.progress.range(n1(min), n1(max), unit)}</span>
+        <span>{shortDate(points[points.length - 1].date)}</span>
       </figcaption>
     </figure>
   );
