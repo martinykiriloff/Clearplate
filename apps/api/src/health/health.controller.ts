@@ -1,9 +1,11 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { Public } from '../auth/decorators';
 import { sql } from 'drizzle-orm';
 import { Database, InjectDb } from '../db/db.module';
 
 @ApiTags('health')
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(@InjectDb() private readonly db: Database) {}
