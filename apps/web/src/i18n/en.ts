@@ -225,8 +225,10 @@ export const en = {
     calories: "Calories",
     proteinOptional: "Protein, g (optional)",
     addEstimate: "Add estimate",
-    scanLocked: "Camera scanning is part of the Barcode module",
-    scanLockedHint: "Coming soon. Looking a product up by the number under the barcode is free.",
+    scansLeft: (left: number, limit: number) => `${left} of ${limit} free scans left today`,
+    scansUsedUp: "Today's free scans are used up",
+    scanLockedHint: (limit: number) =>
+      `Free accounts get ${limit} camera scans a day; they reset at midnight. The Barcode module makes them unlimited. Typing the number under the barcode is always free.`,
     paid: "Paid",
     barcodeNumber: "Barcode number",
     barcodeTitle: "8, 12, 13 or 14 digits",
@@ -426,7 +428,7 @@ export const en = {
     paidBy: (source: string): string => (source === "grant" ? "Paid outside the app" : "Stripe subscription"),
     until: (date: string) => `renews or ends ${date}`,
     modules: {
-      barcode: ["Barcode", "Scan packaged food with your camera and log it in two taps.", "€2"],
+      barcode: ["Barcode", "Unlimited camera scans of packaged food, logged in two taps. Free accounts get 5 scans a day.", "€2"],
       insights: ["Insights", "Adaptive targets from your weight trend, weekly reviews. Coming soon.", "€3"],
       recipes: ["Recipes & meal plans", "All recipes, your own recipes, weekly planner, shopping list. Coming soon.", "€3"],
       data: ["Data & integrations", "Export, import, Apple Health and Health Connect. Coming soon.", "€2"],
@@ -445,7 +447,7 @@ export const en = {
     unsupported: "This browser can't use the camera here. Type the number below instead.",
     found: (code: string) => `Found ${code}`,
     notFound: (code: string) => `${code} isn't in our database or Open Food Facts yet. Use Estimate for now.`,
-    locked: "Unlock camera scanning",
+    locked: "Unlock unlimited scanning",
     offCredit: "Product data: Open Food Facts (ODbL)",
   },
   repeat: {

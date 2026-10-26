@@ -254,6 +254,26 @@ export const entitlements = pgTable(
   ],
 );
 
+/**
+ * One row per camera scan a user made on a given local day. Free users get
+ * FREE_SCANS_PER_DAY distinct products per day; the Barcode module lifts the
+ * limit. Re-scanning the same product on the same day never costs a scan.
+ */
+export const barcodeScans = pgTable(
+  'barcode_scans',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The user's local date the scan counts against. */
+    date: date('date').notNull(),
+    code: text('code').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('barcode_scans_user_date_code_uq').on(t.userId, t.date, t.code)],
+);
+
 export type User = typeof users.$inferSelect;
 export type Profile = typeof profiles.$inferSelect;
 export type TargetSet = typeof targetSets.$inferSelect;
@@ -265,3 +285,4 @@ export type MealType = (typeof mealEnum.enumValues)[number];
 export type Locale = (typeof localeEnum.enumValues)[number];
 export type PaidModule = (typeof moduleEnum.enumValues)[number];
 export type Entitlement = typeof entitlements.$inferSelect;
+export type BarcodeScan = typeof barcodeScans.$inferSelect;

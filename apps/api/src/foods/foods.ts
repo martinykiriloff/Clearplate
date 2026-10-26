@@ -4,10 +4,11 @@ import { Type } from 'class-transformer';
 import { IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { and, desc, eq, ilike, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { AuthUser, CurrentUser } from '../auth/decorators';
-import { RequiresModule } from '../billing/requires-module';
+import { clientToday } from '../common/dates';
 import { Database, InjectDb } from '../db/db.module';
 import { diaryEntries, foods } from '../db/schema';
 import { FOOD_PROVIDER, FoodProvider, OpenFoodFactsProvider } from './open-food-facts';
+import { ScanQuotaService } from './scan-quota';
 
 export class SearchFoodsQuery {
   @IsOptional()
@@ -21,6 +22,13 @@ export class SearchFoodsQuery {
   @Min(1)
   @Max(50)
   limit?: number;
+}
+
+/** The client's local date, so the daily scan allowance resets at the user's midnight. */
+export class ScanQuery {
+  @IsOptional()
+  @IsString()
+  today?: string;
 }
 
 /** Custom food, values per 100 g. */
@@ -227,7 +235,10 @@ export class FoodsService {
 @ApiTags('foods')
 @Controller('foods')
 export class FoodsController {
-  constructor(private readonly foodsService: FoodsService) {}
+  constructor(
+    private readonly foodsService: FoodsService,
+    private readonly scanQuota: ScanQuotaService,
+  ) {}
 
   @Get()
   search(@CurrentUser() user: AuthUser, @Query() query: SearchFoodsQuery) {
@@ -246,12 +257,25 @@ export class FoodsController {
     return this.foodsService.byBarcode(user.id, code);
   }
 
-  /** Camera scan (Barcode module): same lookup, for the one-step scan-and-log flow. */
-  @RequiresModule('barcode')
+  /** How many camera scans are left today (unlimited with the Barcode module). */
+  @Get('scan/quota')
+  quota(@CurrentUser() user: AuthUser, @Query() query: ScanQuery) {
+    return this.scanQuota.status(user.id, clientToday(query.today));
+  }
+
+  /**
+   * Camera scan: same lookup as `barcode/:code`, for the one-step scan-and-log
+   * flow. Free accounts get FREE_SCANS_PER_DAY distinct products per day and a
+   * 402 `scan_limit_reached` after that; the Barcode module lifts the limit.
+   */
   @Get('scan/:code')
-  scan(@CurrentUser() user: AuthUser, @Param('code') code: string) {
+  async scan(@CurrentUser() user: AuthUser, @Param('code') code: string, @Query() query: ScanQuery) {
     if (!/^\d{8,14}$/.test(code)) throw new NotFoundException('No food with this barcode yet');
-    return this.foodsService.byBarcode(user.id, code);
+    const today = clientToday(query.today);
+    await this.scanQuota.assertAllowed(user.id, today, code);
+    const food = await this.foodsService.byBarcode(user.id, code);
+    await this.scanQuota.record(user.id, today, code);
+    return food;
   }
 
   @Get(':id')
@@ -267,7 +291,7 @@ export class FoodsController {
 
 @Module({
   controllers: [FoodsController],
-  providers: [FoodsService, { provide: FOOD_PROVIDER, useClass: OpenFoodFactsProvider }],
+  providers: [FoodsService, ScanQuotaService, { provide: FOOD_PROVIDER, useClass: OpenFoodFactsProvider }],
   exports: [FoodsService],
 })
 export class FoodsModule {}

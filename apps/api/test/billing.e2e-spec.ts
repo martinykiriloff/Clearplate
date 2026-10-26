@@ -11,7 +11,7 @@ describe('billing & entitlements', () => {
   beforeAll(async () => (app = await createApp()));
   afterAll(async () => app.close());
 
-  it('free users have no paid modules and the scan endpoint answers 402', async () => {
+  it('free users have no paid modules and a limited daily scan allowance', async () => {
     const { agent } = await signedInAgent(app);
     const res = await agent.get('/api/billing').expect(200);
     expect(res.body.modules).toEqual({ barcode: false, insights: false, recipes: false, data: false });
@@ -22,8 +22,8 @@ describe('billing & entitlements', () => {
         { plan: 'all', module: 'all', intervals: ['year'] },
       ]),
     );
-    const scan = await agent.get('/api/foods/scan/4006381333931').expect(402);
-    expect(scan.body).toMatchObject({ code: 'module_required', module: 'barcode' });
+    const quota = await agent.get('/api/foods/scan/quota').expect(200);
+    expect(quota.body).toMatchObject({ limit: 5, used: 0, remaining: 5 });
   });
 
   it('applies ENTITLEMENT_GRANTS at sign-up ("all" unlocks every module)', async () => {

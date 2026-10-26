@@ -139,6 +139,14 @@ export interface Billing {
   plans: { plan: "barcode" | "all"; module: string; intervals: ("month" | "year")[] }[];
 }
 
+/** Camera scans left today. `limit`/`remaining` are null with the Barcode module (unlimited). */
+export interface ScanQuota {
+  limit: number | null;
+  used: number;
+  remaining: number | null;
+  date: string;
+}
+
 export interface Today {
   date: string;
   targets: Targets | null;

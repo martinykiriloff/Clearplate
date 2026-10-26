@@ -13,8 +13,8 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarcodeScanner } from "@/components/app/barcode-scanner";
 import { useI18n } from "@/i18n/provider";
-import { useBilling } from "@/lib/billing";
-import { api, ApiError, fetcher, MEALS, type DiaryEntry, type Food, type Meal, type Recipe } from "@/lib/api";
+import { api, ApiError, fetcher, MEALS, type DiaryEntry, type Food, type Meal, type Recipe, type ScanQuota } from "@/lib/api";
+import { localIsoDate } from "@/lib/utils";
 
 /** Suggest the meal by time of day; the user can always change it. */
 function mealForNow(): Meal {
@@ -251,22 +251,31 @@ function QuickEstimate({ onSubmit }: { onSubmit: (q: { label: string; kcal: numb
 function BarcodeLookup({ onPick }: { onPick: (f: Food) => void }) {
   const { t, href } = useI18n();
   const a = t.addFood;
-  const { has, isLoading } = useBilling();
+  // The allowance is per local day, so the client says which day it is.
+  const today = localIsoDate();
+  const { data: quota, mutate: refreshQuota } = useSWR<ScanQuota>(`/foods/scan/quota?today=${today}`, fetcher);
   const [code, setCode] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
-  const canScan = has("barcode");
+  const unlimited = quota?.limit == null;
+  const usedUp = !!quota && quota.remaining === 0;
 
   const lookup = useCallback(
     async (value: string, viaScan: boolean) => {
       setMessage(null);
       try {
-        onPick(await api<Food>(viaScan ? `/foods/scan/${value}` : `/foods/barcode/${value}`));
+        onPick(await api<Food>(viaScan ? `/foods/scan/${value}?today=${today}` : `/foods/barcode/${value}`));
+        if (viaScan) void refreshQuota();
       } catch (err) {
-        setMessage(err instanceof ApiError && err.status === 404 ? t.scan.notFound(value) : a.lookupFailed);
+        if (err instanceof ApiError && err.status === 402) {
+          setMessage(a.scansUsedUp);
+          void refreshQuota();
+        } else {
+          setMessage(err instanceof ApiError && err.status === 404 ? t.scan.notFound(value) : a.lookupFailed);
+        }
       }
     },
-    [onPick, t, a],
+    [onPick, t, a, today, refreshQuota],
   );
 
   const onDetected = useCallback(
@@ -279,25 +288,34 @@ function BarcodeLookup({ onPick }: { onPick: (f: Food) => void }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {canScan ? (
-        <Button type="button" size="lg" className="self-start" onClick={() => setScanning(true)}>
-          <ScanBarcodeIcon aria-hidden="true" />
-          {t.scan.scan}
-        </Button>
-      ) : (
-        !isLoading && (
+      {quota &&
+        (usedUp ? (
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-input p-4">
             <LockIcon aria-hidden="true" className="text-muted-foreground" />
             <div className="min-w-0 flex-1">
-              <p className="font-semibold">{a.scanLocked}</p>
-              <p className="text-sm text-muted-foreground">{a.scanLockedHint}</p>
+              <p className="font-semibold">{a.scansUsedUp}</p>
+              <p className="text-sm text-muted-foreground">{a.scanLockedHint(quota.limit ?? 0)}</p>
             </div>
             <Button asChild variant="outline" size="sm">
               <Link href={href("/upgrade")}>{t.scan.locked}</Link>
             </Button>
           </div>
-        )
-      )}
+        ) : (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <Button type="button" size="lg" onClick={() => setScanning(true)}>
+              <ScanBarcodeIcon aria-hidden="true" />
+              {t.scan.scan}
+            </Button>
+            {!unlimited && quota.remaining != null && quota.limit != null && (
+              <p className="text-sm text-muted-foreground">
+                {a.scansLeft(quota.remaining, quota.limit)} ·{" "}
+                <Link href={href("/upgrade")} className="underline underline-offset-4 hover:text-foreground">
+                  {t.scan.locked}
+                </Link>
+              </p>
+            )}
+          </div>
+        ))}
       <form
         className="flex flex-wrap items-end gap-3"
         onSubmit={(e) => {

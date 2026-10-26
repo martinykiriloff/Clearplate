@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { createApp, signedInAgent } from './app';
+import { day, TODAY } from './fixtures';
 
 describe('foods', () => {
   let app: INestApplication;
@@ -53,6 +54,68 @@ describe('foods', () => {
     expect(res.body[0].name).toMatch(/Salmon/);
     const typo = await agent.get(`/api/foods?q=${encodeURIComponent('кашкавл')}`).expect(200);
     expect(typo.body.some((f: { nameBg: string }) => f.nameBg === 'Кашкавал')).toBe(true);
+  });
+
+  describe('camera scans', () => {
+    /** Five private foods with barcodes, so scans resolve without Open Food Facts. */
+    async function ownFoods(agent: request.Agent, n: number) {
+      const codes: string[] = [];
+      for (let i = 0; i < n; i++) {
+        const barcode = `59000000000${i}`;
+        await agent.post('/api/foods').send({ name: `Scan test ${i}`, barcode, kcal: 100, proteinG: 5, fatG: 5, carbsG: 10 }).expect(201);
+        codes.push(barcode);
+      }
+      return codes;
+    }
+
+    it('gives free accounts 5 distinct scans a day, then answers 402 scan_limit_reached', async () => {
+      const { agent } = await signedInAgent(app);
+      const codes = await ownFoods(agent, 6);
+
+      for (const [i, code] of codes.slice(0, 5).entries()) {
+        await agent.get(`/api/foods/scan/${code}?today=${TODAY}`).expect(200);
+        const quota = await agent.get(`/api/foods/scan/quota?today=${TODAY}`).expect(200);
+        expect(quota.body).toMatchObject({ limit: 5, used: i + 1, remaining: 4 - i, date: TODAY });
+      }
+
+      const blocked = await agent.get(`/api/foods/scan/${codes[5]}?today=${TODAY}`).expect(402);
+      expect(blocked.body).toMatchObject({ code: 'scan_limit_reached', module: 'barcode', limit: 5, used: 5 });
+
+      // Re-scanning a product already scanned today is free; the allowance stays used up.
+      await agent.get(`/api/foods/scan/${codes[0]}?today=${TODAY}`).expect(200);
+      expect((await agent.get(`/api/foods/scan/quota?today=${TODAY}`)).body).toMatchObject({ used: 5, remaining: 0 });
+
+      // Typing the number under the barcode stays free and unlimited.
+      await agent.get(`/api/foods/barcode/${codes[5]}`).expect(200);
+
+      // A new local day starts a fresh allowance.
+      await agent.get(`/api/foods/scan/${codes[5]}?today=${day(1)}`).expect(200);
+      expect((await agent.get(`/api/foods/scan/quota?today=${day(1)}`)).body).toMatchObject({ used: 1, remaining: 4 });
+    });
+
+    it('does not charge a scan for an unknown barcode', async () => {
+      const { agent } = await signedInAgent(app);
+      await agent.get('/api/foods/scan/59009999999999').expect(404);
+      expect((await agent.get('/api/foods/scan/quota')).body).toMatchObject({ used: 0, remaining: 5 });
+      // The Open Food Facts stand-in knows this one: it counts, and is cached in the catalogue.
+      await agent.get('/api/foods/scan/3800123456789').expect(200);
+      expect((await agent.get('/api/foods/scan/quota')).body).toMatchObject({ used: 1, remaining: 4 });
+    });
+
+    it('rejects a client date that is not today', async () => {
+      const { agent } = await signedInAgent(app);
+      await agent.get(`/api/foods/scan/quota?today=${day(-5)}`).expect(400);
+      await agent.get(`/api/foods/scan/4006381333931?today=2020-01-01`).expect(400);
+    });
+
+    it('is unlimited with the Barcode module', async () => {
+      const agent = request.agent(app.getHttpServer());
+      await agent.post('/api/auth/register').send({ email: 'unlimited@example.com', password: 'correct-horse-battery' }).expect(201);
+      expect((await agent.get('/api/foods/scan/quota')).body).toEqual({ limit: null, used: 0, remaining: null, date: expect.any(String) });
+      const codes = await ownFoods(agent, 6);
+      for (const code of codes) await agent.get(`/api/foods/scan/${code}`).expect(200);
+      expect((await agent.get('/api/foods/scan/quota')).body).toMatchObject({ limit: null, remaining: null });
+    });
   });
 
   it('validates custom food input', async () => {

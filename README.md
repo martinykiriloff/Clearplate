@@ -97,9 +97,10 @@ Adding a language: add it to `LOCALES` in `apps/web/src/i18n/config.ts`, add a d
 - 5-step questionnaire with live plan preview, explicit health-data consent, 18+ gate
 - Today: Goal − Food = Left, macros, next best food, weight trend, streak
 - Diary: search (typo tolerant), recent, recipes, quick estimate, lookup by barcode number; edit, remove, undo
+- Camera barcode scanning: 5 distinct products a day for free (`FREE_SCANS_PER_DAY`), unlimited with the Barcode module
 - Recipes with a "fits what's left today" filter; Progress with smoothed weight trend
 
-Not yet: camera barcode scanning (paid module), payments, adaptive target correction, mobile apps,
+Not yet: adaptive target correction, mobile apps,
 licensed food database import. The starter catalogue (134 foods, 30 recipes) uses rounded USDA-style
 reference values and is marked unverified.
 
