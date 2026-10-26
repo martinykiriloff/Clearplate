@@ -37,6 +37,7 @@ const WARNING_TEXT: Record<string, string> = {
   deficit_capped: "We capped the deficit at 1,000 kcal a day to protect energy and muscle.",
   underweight_no_deficit: "Your BMI is under 18.5, so we set a maintenance plan instead of a deficit.",
   carbs_at_minimum: "Carbs are at the minimum; consider a gentler pace.",
+  maintenance_below_floor: "Your maintenance is below our usual minimum, so we set maintenance calories. More activity is the safer lever; talk to a doctor before cutting further.",
 };
 
 function ageFrom(birthDate: string): number | null {

@@ -11,8 +11,11 @@ export function useUser() {
     shouldRetryOnError: false,
     revalidateOnFocus: false,
   });
+  // Only a 401 means signed out. Anything else (429, 5xx, offline) is an error the
+  // UI can retry; treating it as signed out would bounce between /login and /today.
   const signedOut = error instanceof ApiError && error.status === 401;
-  return { user: signedOut ? null : (data ?? undefined), isLoading: isLoading && !signedOut, mutate };
+  const failed = !!error && !signedOut;
+  return { user: signedOut ? null : (data ?? undefined), isLoading: isLoading && !signedOut, failed, mutate };
 }
 
 /**
@@ -21,7 +24,7 @@ export function useUser() {
  */
 export function useRequireUser({ allowNotOnboarded = false } = {}) {
   const router = useRouter();
-  const { user, isLoading, mutate } = useUser();
+  const { user, isLoading, failed, mutate } = useUser();
   useEffect(() => {
     if (isLoading) return;
     // Clear a stale cookie first, otherwise the proxy would bounce /login back here.
@@ -29,5 +32,13 @@ export function useRequireUser({ allowNotOnboarded = false } = {}) {
     else if (user && !user.onboarded && !allowNotOnboarded) router.replace("/onboarding");
   }, [user, isLoading, allowNotOnboarded, router]);
   const ready = !!user && (allowNotOnboarded || user.onboarded);
-  return { user: ready ? user : undefined, mutate };
+  return { user: ready ? user : undefined, failed, mutate };
+}
+
+/**
+ * Leaves the app with a full page load so no cached data from this account
+ * (SWR cache, React state) survives for the next person on the same device.
+ */
+export function hardNavigate(path: string) {
+  window.location.assign(path);
 }

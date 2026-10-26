@@ -35,7 +35,8 @@ export function DiaryView() {
         )}
       </div>
 
-      {!data ? (
+      {/* Previous day's data is kept while loading, but never shown under the new date */}
+      {!data || data.date !== date ? (
         <Skeleton className="h-64 w-full" />
       ) : (
         <>

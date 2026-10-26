@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import useSWR from "swr";
 import { Button } from "@/components/ui/button";
@@ -9,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, fetcher, type Profile, type Targets } from "@/lib/api";
-import { useUser } from "@/lib/session";
+import { hardNavigate, useUser } from "@/lib/session";
 import { fmt, localIsoDate } from "@/lib/utils";
 
 const GOAL: Record<Profile["goal"], string> = { lose: "Lose fat", gain: "Build muscle", habits: "Eat better, same weight" };
@@ -22,16 +21,14 @@ const ACTIVITY: Record<Profile["activity"], string> = {
 };
 
 export function SettingsView() {
-  const router = useRouter();
-  const { user, mutate: mutateUser } = useUser();
+  const { user } = useUser();
   const { data } = useSWR<{ profile: Profile; targets: Targets | null }>(`/profile?date=${localIsoDate()}`, fetcher);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [typed, setTyped] = useState("");
 
-  async function logout() {
-    await api("/auth/logout", { method: "POST" });
-    await mutateUser(undefined, { revalidate: false });
-    router.replace("/login");
+  async function logout(everywhere = false) {
+    await api(everywhere ? "/auth/logout-all" : "/auth/logout", { method: "POST" });
+    hardNavigate("/login");
   }
 
   return (
@@ -41,9 +38,14 @@ export function SettingsView() {
       <section className="flex flex-col gap-4 rounded-xl border bg-card p-6">
         <h2 className="text-xs font-semibold tracking-[0.06em] text-muted-foreground uppercase">Account</h2>
         <p>{user?.email}</p>
-        <Button variant="outline" className="self-start" onClick={() => void logout()}>
-          Log out
-        </Button>
+        <div className="flex flex-wrap gap-3">
+          <Button variant="outline" onClick={() => void logout()}>
+            Log out
+          </Button>
+          <Button variant="ghost" onClick={() => void logout(true)}>
+            Log out on all devices
+          </Button>
+        </div>
       </section>
 
       {data && (
@@ -78,8 +80,7 @@ export function SettingsView() {
             onSubmit={async (e) => {
               e.preventDefault();
               await api("/auth/me", { method: "DELETE" });
-              await mutateUser(undefined, { revalidate: false });
-              router.replace("/");
+              hardNavigate("/");
             }}
           >
             <DialogHeader>
