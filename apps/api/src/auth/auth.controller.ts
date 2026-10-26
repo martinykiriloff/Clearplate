@@ -28,16 +28,16 @@ export class AuthController {
   @Public()
   @Throttle(AUTH_THROTTLE)
   @Post('register')
-  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
-    return this.startSession(await this.auth.register(dto), res);
+  async register(@Body() dto: RegisterDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    return this.startSession(await this.auth.register(dto), req, res);
   }
 
   @Public()
   @Throttle(AUTH_THROTTLE)
   @HttpCode(200)
   @Post('login')
-  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
-    return this.startSession(await this.auth.login(dto), res);
+  async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    return this.startSession(await this.auth.login(dto), req, res);
   }
 
   @Public()
@@ -50,6 +50,14 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: AuthUser) {
     return this.auth.publicUser(user.id);
+  }
+
+  /** Signs out on every device by revoking all issued tokens. */
+  @HttpCode(204)
+  @Post('logout-all')
+  async logoutAll(@CurrentUser() user: AuthUser, @Res({ passthrough: true }) res: Response) {
+    await this.auth.revokeSessions(user.id);
+    clearSessionCookie(res);
   }
 
   /** Permanently deletes the account and all of its data (GDPR Art. 17). */
@@ -71,7 +79,7 @@ export class AuthController {
   @UseGuards(GoogleGuard)
   @Get('google/callback')
   googleCallback(@Req() req: Request, @Res() res: Response) {
-    this.finishSocial(req, res);
+    return this.finishSocial(req, res);
   }
 
   @Public()
@@ -85,21 +93,25 @@ export class AuthController {
   @UseGuards(FacebookGuard)
   @Get('facebook/callback')
   facebookCallback(@Req() req: Request, @Res() res: Response) {
-    this.finishSocial(req, res);
+    return this.finishSocial(req, res);
   }
 
-  private startSession(user: PublicUser, res: Response) {
-    const token = this.auth.issueToken(user);
+  /**
+   * Browsers get only the httpOnly cookie. Native apps (no cookie jar) opt in to
+   * receiving the token in the body with `X-Clearplate-Client: native`.
+   */
+  private async startSession(user: PublicUser, req: Request, res: Response) {
+    const token = await this.auth.issueToken(user);
     setSessionCookie(res, token, this.auth.sessionMaxAgeMs);
-    // The token is also returned for native clients that cannot use cookies.
-    return { user, accessToken: token };
+    const native = req.get('x-clearplate-client') === 'native';
+    return native ? { user, accessToken: token } : { user };
   }
 
-  private finishSocial(req: Request, res: Response) {
+  private async finishSocial(req: Request, res: Response) {
     const web = (this.config.get<string>('WEB_URL') ?? '').replace(/\/$/, '');
     const user = req.user as PublicUser | null | undefined;
     if (!user) return res.redirect(`${web}/login?error=social`);
-    setSessionCookie(res, this.auth.issueToken(user), this.auth.sessionMaxAgeMs);
+    setSessionCookie(res, await this.auth.issueToken(user), this.auth.sessionMaxAgeMs);
     return res.redirect(`${web}${user.onboarded ? '/today' : '/onboarding'}`);
   }
 }

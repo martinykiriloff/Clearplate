@@ -3,7 +3,37 @@ import { ConfigService } from '@nestjs/config';
 import { AuthGuard, PassportStrategy } from '@nestjs/passport';
 import { Strategy as FacebookStrategyBase, Profile as FacebookProfile } from 'passport-facebook';
 import { Strategy as GoogleStrategyBase, Profile as GoogleProfile } from 'passport-google-oauth20';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
+import type { Request } from 'express';
 import { AuthService, PublicUser, SocialProvider } from './auth.service';
+
+const STATE_COOKIE = 'cp_oauth_state';
+
+/**
+ * OAuth `state` kept in a short-lived httpOnly cookie (we run without server
+ * sessions). Stops login CSRF: a callback is accepted only by the browser that
+ * started the flow.
+ */
+export class CookieStateStore {
+  store(req: Request, _meta: unknown, cb: (err: Error | null, state?: string) => void) {
+    const state = randomBytes(24).toString('base64url');
+    req.res?.cookie(STATE_COOKIE, state, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'false',
+      path: '/api/auth',
+      maxAge: 10 * 60 * 1000,
+    });
+    cb(null, state);
+  }
+
+  verify(req: Request, provided: string, cb: (err: Error | null, ok: boolean, info?: unknown) => void) {
+    const expected = req.cookies?.[STATE_COOKIE] as string | undefined;
+    req.res?.clearCookie(STATE_COOKIE, { path: '/api/auth' });
+    const ok = !!expected && !!provided && expected.length === provided.length && timingSafeEqual(Buffer.from(expected), Buffer.from(provided));
+    cb(null, ok, ok ? undefined : { message: 'Invalid OAuth state' });
+  }
+}
 
 /**
  * Social providers are optional: each one is enabled only when its credentials
@@ -32,6 +62,8 @@ export class GoogleStrategy extends PassportStrategy(GoogleStrategyBase, 'google
       clientSecret: config.getOrThrow<string>('GOOGLE_CLIENT_SECRET'),
       callbackURL: callbackUrl(config, 'google'),
       scope: ['email', 'profile'],
+      // Typings model overloads; at runtime passport-oauth2 dispatches on arity (3).
+      store: new CookieStateStore() as never,
     });
   }
 
@@ -52,6 +84,8 @@ export class FacebookStrategy extends PassportStrategy(FacebookStrategyBase, 'fa
       clientSecret: config.getOrThrow<string>('FACEBOOK_APP_SECRET'),
       callbackURL: callbackUrl(config, 'facebook'),
       scope: ['email'],
+      // Typings model overloads; at runtime passport-oauth2 dispatches on arity (3).
+      store: new CookieStateStore() as never,
       profileFields: ['id', 'emails', 'name', 'displayName'],
       graphAPIVersion: 'v21.0',
     });

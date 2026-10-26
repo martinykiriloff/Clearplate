@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { AuthService } from '../src/auth/auth.service';
 import { createApp } from './app';
 
 describe('auth', () => {
@@ -27,8 +28,10 @@ describe('auth', () => {
   it('logs in and reads /me via cookie and via bearer token', async () => {
     const agent = request.agent(app.getHttpServer());
     const login = await agent.post('/api/auth/login').send({ email, password }).expect(200);
+    expect(login.body.accessToken).toBeUndefined(); // browsers only get the httpOnly cookie
     await agent.get('/api/auth/me').expect(200).expect((r) => expect(r.body.email).toBe('martin@example.com'));
-    await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', `Bearer ${login.body.accessToken}`).expect(200);
+    const native = await request(app.getHttpServer()).post('/api/auth/login').set('X-Clearplate-Client', 'native').send({ email, password }).expect(200);
+    await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', `Bearer ${native.body.accessToken}`).expect(200);
   });
 
   it('gives the same error for a wrong password and an unknown email', async () => {
@@ -47,9 +50,29 @@ describe('auth', () => {
     await request(app.getHttpServer()).get('/api/auth/google').expect(404);
   });
 
+  it('logout-all revokes every issued token', async () => {
+    const e = 'revoke@example.com';
+    await request(app.getHttpServer()).post('/api/auth/register').send({ email: e, password }).expect(201);
+    const a = await request(app.getHttpServer()).post('/api/auth/login').set('X-Clearplate-Client', 'native').send({ email: e, password });
+    const b = await request(app.getHttpServer()).post('/api/auth/login').set('X-Clearplate-Client', 'native').send({ email: e, password });
+    await request(app.getHttpServer()).post('/api/auth/logout-all').set('Authorization', `Bearer ${a.body.accessToken}`).expect(204);
+    await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', `Bearer ${b.body.accessToken}`).expect(401);
+  });
+
+  it('a verified social login takes over a pre-registered email and kills the squatter password', async () => {
+    const e = 'victim@example.com';
+    const squatter = await request(app.getHttpServer()).post('/api/auth/register').set('X-Clearplate-Client', 'native').send({ email: e, password }).expect(201);
+    const auth = app.get(AuthService);
+    await expect(auth.socialLogin('google', 'g-unverified', e, false)).rejects.toThrow();
+    const user = await auth.socialLogin('google', 'g-123', e, true, 'Victim');
+    expect(user.email).toBe(e);
+    await request(app.getHttpServer()).post('/api/auth/login').send({ email: e, password }).expect(401);
+    await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', `Bearer ${squatter.body.accessToken}`).expect(401);
+  });
+
   it('deletes the account and invalidates the token', async () => {
     const agent = request.agent(app.getHttpServer());
-    const { body } = await agent.post('/api/auth/login').send({ email, password }).expect(200);
+    const { body } = await agent.post('/api/auth/login').set('X-Clearplate-Client', 'native').send({ email, password }).expect(200);
     await agent.delete('/api/auth/me').expect(204);
     await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', `Bearer ${body.accessToken}`).expect(401);
   });

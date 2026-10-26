@@ -2,7 +2,7 @@ import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/co
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { Database, InjectDb } from '../db/db.module';
 import { oauthAccounts, profiles, users } from '../db/schema';
 import { LoginDto, RegisterDto } from './dto';
@@ -52,8 +52,13 @@ export class AuthService {
   }
 
   /**
-   * Signs in with a social account. Links to an existing user with the same email
-   * only when the provider says the email is verified (prevents account takeover).
+   * Signs in with a social account.
+   *
+   * Only provider-verified emails are accepted. Because email/password sign-up is
+   * not verified yet, an existing account with the same email may have been
+   * pre-registered by someone else: when a verified social login claims it, the
+   * password and any other social links are removed, so only the person who
+   * proved control of the email keeps access (pre-hijacking defence).
    */
   async socialLogin(
     provider: SocialProvider,
@@ -70,12 +75,14 @@ export class AuthService {
     if (linked) return this.publicUser(linked.userId);
 
     if (!email) throw new UnauthorizedException(`${provider} did not share an email address`);
+    if (!emailVerified) throw new UnauthorizedException(`Verify your email with ${provider} first`);
     const normalized = email.trim().toLowerCase();
 
     const userId = await this.db.transaction(async (tx) => {
       const [existing] = await tx.select({ id: users.id }).from(users).where(eq(users.email, normalized)).limit(1);
-      if (existing && !emailVerified) {
-        throw new ConflictException(`Sign in with your password first, then connect ${provider}`);
+      if (existing) {
+        await tx.update(users).set({ passwordHash: null, tokenVersion: sql`${users.tokenVersion} + 1` }).where(eq(users.id, existing.id));
+        await tx.delete(oauthAccounts).where(eq(oauthAccounts.userId, existing.id));
       }
       const id = existing?.id ?? (await tx.insert(users).values({ email: normalized, name: name ?? null }).returning({ id: users.id }))[0].id;
       await tx.insert(oauthAccounts).values({ userId: id, provider, providerAccountId }).onConflictDoNothing();
@@ -95,11 +102,18 @@ export class AuthService {
     return { id: row.id, email: row.email, name: row.name, onboarded: row.profileUserId != null };
   }
 
-  issueToken(user: { id: string; email: string }): string {
-    return this.jwt.sign({ sub: user.id, email: user.email });
+  /** The token carries the user's token version; bumping it revokes all sessions. */
+  async issueToken(user: { id: string; email: string }): Promise<string> {
+    const [row] = await this.db.select({ v: users.tokenVersion }).from(users).where(eq(users.id, user.id)).limit(1);
+    return this.jwt.sign({ sub: user.id, email: user.email, v: row?.v ?? 0 });
   }
 
-  /** GDPR erasure: cascades to profile, targets, diary, weights, own recipes and OAuth links. */
+  /** Signs out everywhere: every token issued so far stops working. */
+  async revokeSessions(userId: string): Promise<void> {
+    await this.db.update(users).set({ tokenVersion: sql`${users.tokenVersion} + 1` }).where(eq(users.id, userId));
+  }
+
+  /** GDPR erasure: cascades to profile, targets, diary, weights, own foods and recipes, OAuth links. */
   async deleteAccount(userId: string): Promise<void> {
     await this.db.delete(users).where(eq(users.id, userId));
   }

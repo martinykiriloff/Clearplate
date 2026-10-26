@@ -35,6 +35,8 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash'),
   name: text('name'),
+  /** Incremented to revoke every issued token (logout everywhere, account takeover defence). */
+  tokenVersion: integer('token_version').notNull().default(0),
   ...timestamps,
 });
 
@@ -99,7 +101,7 @@ export const foods = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
     brand: text('brand'),
-    barcode: text('barcode').unique(),
+    barcode: text('barcode'),
     category: text('category'),
     kcal: real('kcal').notNull(),
     proteinG: real('protein_g').notNull(),
@@ -110,10 +112,16 @@ export const foods = pgTable(
     servingName: text('serving_name'),
     source: foodSourceEnum('source').notNull().default('seed'),
     verified: boolean('verified').notNull().default(false),
-    createdById: uuid('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+    /** Owner of a private custom food; null = catalogue. Deleted with the user (GDPR). */
+    createdById: uuid('created_by_id').references(() => users.id, { onDelete: 'cascade' }),
     ...timestamps,
   },
-  (t) => [index('foods_name_trgm_idx').using('gin', sql`${t.name} gin_trgm_ops`)],
+  (t) => [
+    index('foods_name_trgm_idx').using('gin', sql`${t.name} gin_trgm_ops`),
+    // A barcode is unique in the catalogue and per user, never across users.
+    uniqueIndex('foods_catalogue_barcode_uq').on(t.barcode).where(sql`${t.createdById} is null and ${t.barcode} is not null`),
+    uniqueIndex('foods_user_barcode_uq').on(t.createdById, t.barcode).where(sql`${t.createdById} is not null and ${t.barcode} is not null`),
+  ],
 );
 
 export const recipes = pgTable(

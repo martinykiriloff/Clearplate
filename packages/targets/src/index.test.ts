@@ -45,9 +45,17 @@ describe('computeTargets', () => {
   });
 
   it('never goes below the calorie floor', () => {
-    const t = computeTargets({ sex: 'female', age: 70, heightCm: 150, weightKg: 50, activity: 'sedentary', goal: 'lose', pace: 'fast' });
+    const t = computeTargets({ sex: 'female', age: 40, heightCm: 160, weightKg: 60, activity: 'sedentary', goal: 'lose', pace: 'fast' });
     expect(t.calories).toBe(1200);
     expect(t.warnings).toContain('calorie_floor_applied');
+  });
+
+  it('holds maintenance instead of a surplus when maintenance is below the floor', () => {
+    const t = computeTargets({ sex: 'female', age: 75, heightCm: 150, weightKg: 52, activity: 'sedentary', goal: 'lose' });
+    expect(t.tdee).toBeLessThan(1200);
+    expect(t.calories).toBeLessThanOrEqual(t.tdee);
+    expect(t.expectedWeeklyChangeKg).toBeLessThanOrEqual(0);
+    expect(t.warnings).toContain('maintenance_below_floor');
   });
 
   it('refuses a deficit for underweight users', () => {

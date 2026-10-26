@@ -33,6 +33,17 @@ describe('foods', () => {
     const other = await signedInAgent(app);
     await other.agent.get('/api/foods/barcode/4006381333931').expect(404);
     await other.agent.get(`/api/foods/${created.body.id}`).expect(404);
+    // Another user can use the same barcode for their own food: no cross-user blocking or leak.
+    await other.agent.post('/api/foods').send({ name: 'Their bar', barcode: '4006381333931', kcal: 350, proteinG: 30, fatG: 10, carbsG: 30 }).expect(201);
+  });
+
+  it('deletes custom foods with the account instead of publishing them', async () => {
+    const { agent } = await signedInAgent(app);
+    await agent.post('/api/foods').send({ name: 'Secret family pie', kcal: 300, proteinG: 5, fatG: 15, carbsG: 35 }).expect(201);
+    await agent.delete('/api/auth/me').expect(204);
+    const other = await signedInAgent(app);
+    const res = await other.agent.get('/api/foods?q=secret family pie').expect(200);
+    expect(res.body.some((f: { name: string }) => f.name === 'Secret family pie')).toBe(false);
   });
 
   it('validates custom food input', async () => {

@@ -69,13 +69,14 @@ export class WeightsService {
   private summarize(points: { date: string; weightKg: number; trendKg: number }[]) {
     if (!points.length) return null;
     const last = points[points.length - 1];
+    // Compare with the trend about a week ago; null until there is enough history.
     const weekAgo = addDays(last.date, -7);
-    const base = [...points].reverse().find((p) => p.date <= weekAgo) ?? points[0];
+    const base = [...points].reverse().find((p) => p.date <= weekAgo && p.date >= addDays(weekAgo, -3));
     return {
       date: last.date,
       weightKg: last.weightKg,
       trendKg: last.trendKg,
-      change7dKg: base === last ? null : Math.round((last.trendKg - base.trendKg) * 10) / 10,
+      change7dKg: base ? Math.round((last.trendKg - base.trendKg) * 10) / 10 : null,
     };
   }
 

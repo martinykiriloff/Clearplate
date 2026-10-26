@@ -1,3 +1,9 @@
+import { addDays, todayIso } from '../src/common/dates';
+
+/** Dates relative to the server's today, so tests keep passing on any day. */
+export const TODAY = todayIso();
+export const day = (offset: number) => addDays(TODAY, offset);
+
 /** A typical onboarding payload used across e2e suites. */
 export const onboarding = {
   sex: 'male',
@@ -8,5 +14,5 @@ export const onboarding = {
   goal: 'lose',
   targetWeightKg: 95,
   healthDataConsent: true,
-  today: '2026-10-26',
+  today: TODAY,
 };

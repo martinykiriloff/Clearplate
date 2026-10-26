@@ -6,7 +6,8 @@
  * - BMR: Mifflin–St Jeor.
  * - TDEE: BMR × activity factor (1.2–1.9).
  * - Calories: TDEE adjusted by goal and pace, never below the safety floor
- *   (1500 kcal for men, 1200 kcal for women).
+ *   (1500 kcal for men, 1200 kcal for women) — unless maintenance itself is
+ *   lower, in which case we hold maintenance rather than create a surplus.
  * - Protein: g/kg of a *reference* weight, so people with higher body fat
  *   are not given inflated protein targets.
  * - Fat: at least 0.6 g/kg reference weight and about 27% of calories.
@@ -33,7 +34,8 @@ export type TargetsWarning =
   | 'calorie_floor_applied'
   | 'deficit_capped'
   | 'underweight_no_deficit'
-  | 'carbs_at_minimum';
+  | 'carbs_at_minimum'
+  | 'maintenance_below_floor';
 
 export interface Targets {
   bmr: number;
@@ -159,11 +161,18 @@ export function computeTargets(input: TargetsInput): Targets {
 
   const floor = CALORIE_FLOOR[input.sex];
   if (calories < floor) {
-    calories = floor;
-    warnings.push('calorie_floor_applied');
+    if (tdee < floor && goal !== 'gain') {
+      // Small, sedentary bodies can burn less than the generic floor. Raising
+      // them to the floor would be a surplus, so hold maintenance instead.
+      calories = tdee;
+      warnings.push('maintenance_below_floor');
+    } else {
+      calories = floor;
+      warnings.push('calorie_floor_applied');
+    }
   }
-  // Round to 10 kcal, never towards a deeper deficit than computed.
-  calories = goal === 'lose' ? Math.ceil(calories / 10) * 10 : round(calories, 10);
+  // Round to 10 kcal, never towards a deeper deficit than computed, never above maintenance.
+  calories = goal === 'lose' ? Math.min(Math.ceil(calories / 10) * 10, Math.floor(tdee)) : round(calories, 10);
 
   const refW = referenceWeight(input.weightKg, input.heightCm, input.targetWeightKg);
   const proteinG = round(PROTEIN_G_PER_KG[goal] * refW);

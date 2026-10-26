@@ -8,6 +8,10 @@ import helmet from 'helmet';
 export function configureApp(app: INestApplication): void {
   const config = app.get(ConfigService);
 
+  // The browser reaches the API through the Next.js proxy (and possibly a load
+  // balancer): trust X-Forwarded-For from private networks only, so rate limits
+  // apply per real client instead of to everyone behind the proxy.
+  (app.getHttpAdapter().getInstance() as { set: (k: string, v: unknown) => void }).set('trust proxy', 'loopback, linklocal, uniquelocal');
   app.setGlobalPrefix('api');
   app.use(helmet());
   app.use(cookieParser());

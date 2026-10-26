@@ -115,11 +115,13 @@ export class FoodsService {
       .limit(limit);
   }
 
+  /** The user's own entry for a barcode wins over the catalogue's. */
   async byBarcode(userId: string, code: string) {
     const [food] = await this.db
       .select(publicColumns)
       .from(foods)
       .where(and(eq(foods.barcode, code), this.visibleTo(userId)))
+      .orderBy(sql`${foods.createdById} is null`)
       .limit(1);
     if (!food) throw new NotFoundException('No food with this barcode yet');
     return food;
@@ -144,7 +146,7 @@ export class FoodsService {
       return food;
     } catch (e) {
       if ((e as { cause?: { code?: string }; code?: string }).cause?.code === '23505' || (e as { code?: string }).code === '23505') {
-        throw new ConflictException('A food with this barcode already exists');
+        throw new ConflictException('You already have a food with this barcode');
       }
       throw e;
     }

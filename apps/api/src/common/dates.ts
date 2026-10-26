@@ -32,3 +32,17 @@ export function ageOn(birthDate: string, on: string): number {
   const [y, m, d] = on.split('-').map(Number);
   return y - by - (m < bm || (m === bm && d < bd) ? 1 : 0);
 }
+
+/**
+ * A client-supplied "today" (the user's local date) may differ from the server's
+ * UTC date by at most one day across time zones. Anything further is rejected
+ * so it cannot be used to bypass date-based rules such as the age gate.
+ */
+export function clientToday(value: string | undefined): string {
+  const server = todayIso();
+  if (value == null) return server;
+  if (!isIsoDate(value) || value < addDays(server, -1) || value > addDays(server, 1)) {
+    throw new BadRequestException('today must be your current local date (YYYY-MM-DD)');
+  }
+  return value;
+}

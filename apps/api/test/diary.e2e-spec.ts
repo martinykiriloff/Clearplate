@@ -1,12 +1,12 @@
 import { INestApplication } from '@nestjs/common';
 import { createApp, signedInAgent } from './app';
-import { onboarding } from './fixtures';
+import { day, onboarding, TODAY } from './fixtures';
 
-const date = '2026-10-26';
+const date = TODAY;
 
 async function onboardedAgent(app: INestApplication) {
   const { agent } = await signedInAgent(app);
-  await agent.put('/api/profile').send({ ...onboarding, today: '2026-10-20' }).expect(200);
+  await agent.put('/api/profile').send(onboarding).expect(200);
   return agent;
 }
 
@@ -68,10 +68,10 @@ describe('diary & today', () => {
   it('builds the Today view: equation, next best food, weight and streak', async () => {
     const agent = await onboardedAgent(app);
     const [yogurt] = (await agent.get('/api/foods?q=greek yogurt, plain 2').expect(200)).body;
-    for (const d of ['2026-10-24', '2026-10-25', date]) {
+    for (const d of [day(-2), day(-1), date]) {
       await agent.post('/api/diary').send({ date: d, meal: 'breakfast', foodId: yogurt.id, grams: 300 }).expect(201);
     }
-    await agent.put('/api/weights').send({ date: '2026-10-26', weightKg: 112.4 }).expect(200);
+    await agent.put('/api/weights').send({ date, weightKg: 112.4 }).expect(200);
 
     const t = (await agent.get(`/api/today?date=${date}`).expect(200)).body;
     expect(t.remaining.calories).toBe(t.targets.calories - t.eaten.calories);

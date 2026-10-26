@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { computeTargets, TargetsInputError } from '@clearplate/targets';
 import { and, desc, eq, lte } from 'drizzle-orm';
-import { ageOn, todayIso } from '../common/dates';
+import { ageOn, clientToday, todayIso } from '../common/dates';
 import { Database, InjectDb } from '../db/db.module';
 import { profiles, TargetSet, targetSets, weightEntries } from '../db/schema';
 import { ManualTargetsDto, OnboardingDto } from './dto';
@@ -35,7 +35,7 @@ export class ProfileService {
   constructor(@InjectDb() private readonly db: Database) {}
 
   async onboard(userId: string, dto: OnboardingDto) {
-    const today = dto.today ?? todayIso();
+    const today = clientToday(dto.today);
     const age = ageOn(dto.birthDate, today);
     if (age < 18) throw new BadRequestException('Clearplate is for adults 18 and over');
 
@@ -116,7 +116,7 @@ export class ProfileService {
   }
 
   async setManualTargets(userId: string, dto: ManualTargetsDto) {
-    const today = dto.today ?? todayIso();
+    const today = clientToday(dto.today);
     const current = await this.targetsFor(userId, today);
     if (!current) throw new NotFoundException('Complete the questionnaire first');
     const [profile] = await this.db.select({ sex: profiles.sex }).from(profiles).where(eq(profiles.userId, userId)).limit(1);

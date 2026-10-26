@@ -18,17 +18,22 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     @InjectDb() private readonly db: Database,
   ) {
     super({
-      // Web uses the httpOnly cookie; mobile clients send a bearer token.
-      jwtFromRequest: ExtractJwt.fromExtractors([fromCookie, ExtractJwt.fromAuthHeaderAsBearerToken()]),
+      // Native clients send a bearer token; the web uses the httpOnly cookie.
+      // Bearer first, so a stale cookie never shadows a valid explicit token.
+      jwtFromRequest: ExtractJwt.fromExtractors([ExtractJwt.fromAuthHeaderAsBearerToken(), fromCookie]),
       secretOrKey: config.getOrThrow<string>('JWT_SECRET'),
       ignoreExpiration: false,
     });
   }
 
-  async validate(payload: { sub: string; email: string }): Promise<AuthUser> {
-    // A token for a deleted account must stop working immediately.
-    const [user] = await this.db.select({ id: users.id, email: users.email }).from(users).where(eq(users.id, payload.sub)).limit(1);
-    if (!user) throw new UnauthorizedException();
-    return user;
+  async validate(payload: { sub: string; email: string; v?: number }): Promise<AuthUser> {
+    // Tokens of deleted accounts or revoked sessions must stop working immediately.
+    const [user] = await this.db
+      .select({ id: users.id, email: users.email, tokenVersion: users.tokenVersion })
+      .from(users)
+      .where(eq(users.id, payload.sub))
+      .limit(1);
+    if (!user || (payload.v ?? 0) !== user.tokenVersion) throw new UnauthorizedException();
+    return { id: user.id, email: user.email };
   }
 }
