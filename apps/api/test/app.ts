@@ -22,6 +22,7 @@ export const fakeFoodProvider: FoodProvider = {
       sugarG: 4,
       satFatG: 1,
       sodiumMg: 120,
+      micros: { calcium: 150 },
       servingG: 200,
     };
   },

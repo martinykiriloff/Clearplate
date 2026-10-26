@@ -118,3 +118,18 @@ describe('macroSplit', () => {
     expect(macroSplit({ proteinG: 0, fatG: 0, carbsG: 0 })).toEqual({ protein: 0, fat: 0, carbs: 0 });
   });
 });
+
+import { microTargets } from './index';
+
+describe('microTargets', () => {
+  it('follows the DRI tables by sex and age', () => {
+    const man = microTargets('male', 31);
+    expect(man.vitaminC).toEqual({ amount: 90, kind: 'RDA' });
+    expect(man.magnesium.amount).toBe(420);
+    expect(man.iron.amount).toBe(8);
+    const woman = microTargets('female', 30);
+    expect(woman.iron.amount).toBe(18);
+    expect(microTargets('female', 55).iron.amount).toBe(8);
+    expect(microTargets('male', 75).vitaminD.amount).toBe(20);
+  });
+});

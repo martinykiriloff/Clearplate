@@ -4,9 +4,32 @@ import { Pool } from 'pg';
 import { foods, recipes } from './schema';
 import { FOOD_SEED } from './seed-data/foods';
 import { FOOD_NAMES_BG, SERVING_NAMES_BG } from './seed-data/foods.bg';
+import { FOOD_MICROS, Micros } from './seed-data/micros';
 import { FOOD_NUTRIENTS, RECIPE_NUTRIENTS } from './seed-data/nutrients';
+import { RECIPE_COMPOSITION } from './seed-data/recipe-composition';
 import { RECIPE_SEED } from './seed-data/recipes';
 import { RECIPES_BG } from './seed-data/recipes.bg';
+
+/** Per-serving micros of a recipe from its composition; keys known for every ingredient only. */
+export function recipeMicros(name: string): Micros | null {
+  const parts = RECIPE_COMPOSITION[name];
+  if (!parts) return null;
+  const out: Record<string, number> = {};
+  const counts: Record<string, number> = {};
+  for (const [food, grams] of parts) {
+    const m = FOOD_MICROS[food]?.micros ?? {};
+    for (const [k, v] of Object.entries(m)) {
+      out[k] = (out[k] ?? 0) + (v * grams) / 100;
+      counts[k] = (counts[k] ?? 0) + 1;
+    }
+  }
+  // A nutrient unknown for one ingredient would be understated: leave it out.
+  for (const k of Object.keys(out)) {
+    if (counts[k] !== parts.length) delete out[k];
+    else out[k] = Math.round(out[k] * 1000) / 1000;
+  }
+  return out;
+}
 
 /**
  * Idempotent: inserts the starter catalogue when it is missing, and fills in
@@ -35,6 +58,7 @@ export async function seed(databaseUrl: string): Promise<{ foods: number; recipe
         sugarG: FOOD_NUTRIENTS[name]?.[0] ?? null,
         satFatG: FOOD_NUTRIENTS[name]?.[1] ?? null,
         sodiumMg: FOOD_NUTRIENTS[name]?.[2] ?? null,
+        micros: FOOD_MICROS[name]?.micros ?? null,
         servingG,
         servingName,
         servingNameBg: servingName ? (SERVING_NAMES_BG[servingName] ?? null) : null,
@@ -70,6 +94,7 @@ export async function seed(databaseUrl: string): Promise<{ foods: number; recipe
             sugarG: nut?.[1] ?? null,
             satFatG: nut?.[2] ?? null,
             sodiumMg: nut?.[3] ?? null,
+            micros: recipeMicros(r.name),
           };
         }),
       );
@@ -99,6 +124,22 @@ export async function seed(databaseUrl: string): Promise<{ foods: number; recipe
         .update(recipes)
         .set({ fiberG, sugarG, satFatG, sodiumMg })
         .where(and(isNull(recipes.ownerId), eq(recipes.name, name), isNull(recipes.sugarG)));
+    }
+
+    // Vitamins and minerals for rows seeded before they existed.
+    for (const [name, { micros }] of Object.entries(FOOD_MICROS)) {
+      await db
+        .update(foods)
+        .set({ micros })
+        .where(and(eq(foods.source, 'seed'), eq(foods.name, name), isNull(foods.micros)));
+    }
+    for (const r of RECIPE_SEED) {
+      const micros = recipeMicros(r.name);
+      if (!micros) continue;
+      await db
+        .update(recipes)
+        .set({ micros })
+        .where(and(isNull(recipes.ownerId), eq(recipes.name, r.name), isNull(recipes.micros)));
     }
 
     return { foods: insertedFoods, recipes: insertedRecipes, translated };

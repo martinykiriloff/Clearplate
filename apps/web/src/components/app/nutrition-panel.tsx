@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useI18n } from "@/i18n/provider";
 import type { Today } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { MicroPanel } from "./micro-panel";
 
 type MacroKey = "protein" | "fat" | "carbs";
 const MACROS: MacroKey[] = ["protein", "fat", "carbs"];
@@ -23,6 +24,7 @@ export function NutritionPanel({ data }: { data: Today }) {
       </h2>
       <MacroDonut data={data} />
       <NutrientTable data={data} />
+      <MicroPanel data={data} />
     </section>
   );
 }

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  jsonb,
   date,
   index,
   integer,
@@ -120,6 +121,8 @@ export const foods = pgTable(
     sugarG: real('sugar_g'),
     satFatG: real('sat_fat_g'),
     sodiumMg: real('sodium_mg'),
+    /** Vitamins, minerals and fat quality per 100 g (see seed-data/micros.ts for keys and units). */
+    micros: jsonb('micros').$type<Record<string, number>>(),
     servingG: real('serving_g'),
     servingName: text('serving_name'),
     servingNameBg: text('serving_name_bg'),
@@ -160,6 +163,8 @@ export const recipes = pgTable(
     sugarG: real('sugar_g'),
     satFatG: real('sat_fat_g'),
     sodiumMg: real('sodium_mg'),
+    /** Per serving. */
+    micros: jsonb('micros').$type<Record<string, number>>(),
     /** null = public catalogue recipe */
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'cascade' }),
     ...timestamps,
@@ -198,6 +203,7 @@ export const diaryEntries = pgTable(
     sugarG: real('sugar_g'),
     satFatG: real('sat_fat_g'),
     sodiumMg: real('sodium_mg'),
+    micros: jsonb('micros').$type<Record<string, number>>(),
     isEstimate: boolean('is_estimate').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     /** Soft delete enables undo */

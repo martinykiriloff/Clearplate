@@ -14,8 +14,37 @@ export interface ExternalFood {
   sugarG: number | null;
   satFatG: number | null;
   sodiumMg: number | null;
+  micros: Record<string, number> | null;
   servingG: number | null;
 }
+
+/** OFF nutriment → our key and the factor from OFF's grams to our unit. */
+const OFF_MICROS: [string, string, number][] = [
+  ['vitamin-a_100g', 'vitaminA', 1e6],
+  ['vitamin-c_100g', 'vitaminC', 1e3],
+  ['vitamin-d_100g', 'vitaminD', 1e6],
+  ['vitamin-e_100g', 'vitaminE', 1e3],
+  ['vitamin-k_100g', 'vitaminK', 1e6],
+  ['vitamin-b1_100g', 'thiamin', 1e3],
+  ['vitamin-b2_100g', 'riboflavin', 1e3],
+  ['vitamin-pp_100g', 'niacin', 1e3],
+  ['vitamin-b6_100g', 'vitaminB6', 1e3],
+  ['vitamin-b9_100g', 'folate', 1e6],
+  ['vitamin-b12_100g', 'vitaminB12', 1e6],
+  ['pantothenic-acid_100g', 'pantothenic', 1e3],
+  ['calcium_100g', 'calcium', 1e3],
+  ['iron_100g', 'iron', 1e3],
+  ['magnesium_100g', 'magnesium', 1e3],
+  ['phosphorus_100g', 'phosphorus', 1e3],
+  ['potassium_100g', 'potassium', 1e3],
+  ['zinc_100g', 'zinc', 1e3],
+  ['copper_100g', 'copper', 1e3],
+  ['manganese_100g', 'manganese', 1e3],
+  ['selenium_100g', 'selenium', 1e6],
+  ['cholesterol_100g', 'cholesterol', 1e3],
+  ['monounsaturated-fat_100g', 'monoFat', 1],
+  ['polyunsaturated-fat_100g', 'polyFat', 1],
+];
 
 export const FOOD_PROVIDER = Symbol('FOOD_PROVIDER');
 
@@ -70,6 +99,11 @@ export function normalizeOff(barcode: string, p: Record<string, unknown>): Exter
   const nameBg = (p.product_name_bg as string) || null;
   const name = nameEn.trim() || nameBg?.trim();
   if (!name) return null;
+  const micros: Record<string, number> = {};
+  for (const [offKey, key, factor] of OFF_MICROS) {
+    const v = num(n[offKey]);
+    if (v != null) micros[key] = Math.round(v * factor * 1000) / 1000;
+  }
   const sodiumG = num(n['sodium_100g']) ?? (num(n['salt_100g']) != null ? num(n['salt_100g'])! / 2.5 : null);
 
   return {
@@ -85,6 +119,8 @@ export function normalizeOff(barcode: string, p: Record<string, unknown>): Exter
     sugarG: num(n['sugars_100g']),
     satFatG: num(n['saturated-fat_100g']),
     sodiumMg: sodiumG != null ? Math.round(sodiumG * 1000) : null,
+    // Packaged foods list few micronutrients; treat a partial set as "unknown" for totals.
+    micros: Object.keys(micros).length ? micros : null,
     servingG: num(p.serving_quantity),
   };
 }

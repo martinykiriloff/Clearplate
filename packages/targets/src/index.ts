@@ -265,3 +265,59 @@ export function macroSplit({ proteinG, fatG, carbsG }: { proteinG: number; fatG:
   }
   return Object.fromEntries(floored.map((r) => [r.k, r.f])) as { protein: number; fat: number; carbs: number };
 }
+
+/** Vitamins and minerals tracked against a daily reference intake. */
+export const MICRO_KEYS = [
+  'vitaminA', 'vitaminC', 'vitaminD', 'vitaminE', 'vitaminK', 'thiamin', 'riboflavin', 'niacin', 'vitaminB6', 'folate', 'vitaminB12', 'choline', 'pantothenic',
+  'calcium', 'iron', 'magnesium', 'phosphorus', 'potassium', 'zinc', 'copper', 'manganese', 'selenium',
+] as const;
+export type MicroKey = (typeof MICRO_KEYS)[number];
+
+export const MICRO_UNITS: Record<MicroKey, 'mg' | 'µg'> = {
+  vitaminA: 'µg', vitaminC: 'mg', vitaminD: 'µg', vitaminE: 'mg', vitaminK: 'µg', thiamin: 'mg', riboflavin: 'mg', niacin: 'mg', vitaminB6: 'mg',
+  folate: 'µg', vitaminB12: 'µg', choline: 'mg', pantothenic: 'mg', calcium: 'mg', iron: 'mg', magnesium: 'mg', phosphorus: 'mg', potassium: 'mg',
+  zinc: 'mg', copper: 'mg', manganese: 'mg', selenium: 'µg',
+};
+
+export interface MicroTarget {
+  amount: number;
+  /** RDA: covers ~98% of people; AI: adequate intake where no RDA exists. */
+  kind: 'RDA' | 'AI';
+}
+
+/**
+ * Daily reference intakes for adults (US National Academies DRIs; potassium
+ * per the 2019 update). Vitamin A as RAE, folate as DFE, vitamin E as
+ * alpha-tocopherol. Not for pregnancy or lactation.
+ */
+export function microTargets(sex: Sex, age: number): Record<MicroKey, MicroTarget> {
+  const m = sex === 'male';
+  const over50 = age > 50;
+  const over70 = age > 70;
+  const rda = (amount: number): MicroTarget => ({ amount, kind: 'RDA' });
+  const ai = (amount: number): MicroTarget => ({ amount, kind: 'AI' });
+  return {
+    vitaminA: rda(m ? 900 : 700),
+    vitaminC: rda(m ? 90 : 75),
+    vitaminD: rda(over70 ? 20 : 15),
+    vitaminE: rda(15),
+    vitaminK: ai(m ? 120 : 90),
+    thiamin: rda(m ? 1.2 : 1.1),
+    riboflavin: rda(m ? 1.3 : 1.1),
+    niacin: rda(m ? 16 : 14),
+    vitaminB6: rda(over50 ? (m ? 1.7 : 1.5) : 1.3),
+    folate: rda(400),
+    vitaminB12: rda(2.4),
+    choline: ai(m ? 550 : 425),
+    pantothenic: ai(5),
+    calcium: rda(over70 || (!m && over50) ? 1200 : 1000),
+    iron: rda(m || over50 ? 8 : 18),
+    magnesium: rda(m ? (age <= 30 ? 400 : 420) : age <= 30 ? 310 : 320),
+    phosphorus: rda(700),
+    potassium: ai(m ? 3400 : 2600),
+    zinc: rda(m ? 11 : 8),
+    copper: rda(0.9),
+    manganese: ai(m ? 2.3 : 1.8),
+    selenium: rda(55),
+  };
+}

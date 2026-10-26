@@ -46,6 +46,30 @@ describe('barcode, nutrients and copy', () => {
     expect(t.split.target.protein).toBeGreaterThan(20);
   });
 
+  it('tracks vitamins and minerals against DRI targets for sex and age', async () => {
+    const { agent } = await signedInAgent(app);
+    await agent.put('/api/profile').send(onboarding).expect(200);
+    const [salmon] = (await agent.get('/api/foods?q=salmon, atlantic, raw').expect(200)).body;
+    expect(salmon.micros.vitaminD).toBeGreaterThan(5);
+    const entry = (await agent.post('/api/diary').send({ date: TODAY, meal: 'dinner', foodId: salmon.id, grams: 200 }).expect(201)).body;
+    expect(entry.micros.vitaminD).toBeCloseTo(salmon.micros.vitaminD * 2, 2);
+    await agent.post('/api/diary').send({ date: TODAY, meal: 'lunch', quick: { label: 'Burger', kcal: 600 } }).expect(201);
+
+    const t = (await agent.get(`/api/today?date=${TODAY}`).expect(200)).body;
+    expect(t.nutrients.micros.vitaminD).toBeCloseTo(entry.micros.vitaminD, 1);
+    expect(t.nutrients.micros.selenium).toBeGreaterThan(0);
+    expect(t.nutrients.microCoveragePct).toBe(Math.round((entry.kcal / (entry.kcal + 600)) * 100));
+    expect(t.microTargets.vitaminD).toEqual({ amount: 15, kind: 'RDA' });
+    expect(t.microTargets.potassium.kind).toBe('AI');
+    expect(Object.keys(t.microTargets)).toHaveLength(22);
+  });
+
+  it('carries micronutrients from recipes', async () => {
+    const { agent } = await signedInAgent(app);
+    const [r] = (await agent.get('/api/recipes?q=baked salmon').expect(200)).body;
+    expect(r.micros?.vitaminD ?? 0).toBeGreaterThan(5);
+  });
+
   it('copies a meal from yesterday into today', async () => {
     const { agent } = await signedInAgent(app);
     const [egg] = (await agent.get('/api/foods?q=egg, hard').expect(200)).body;

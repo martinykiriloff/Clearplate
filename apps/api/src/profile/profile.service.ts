@@ -101,6 +101,12 @@ export class ProfileService {
     return { profile: { ...rest, healthDataConsentAt }, targets: await this.targetsFor(userId, date) };
   }
 
+  /** Sex and age on a date (for reference intakes); null before onboarding. */
+  async basics(userId: string, date: string): Promise<{ sex: 'male' | 'female'; age: number } | null> {
+    const [p] = await this.db.select({ sex: profiles.sex, birthDate: profiles.birthDate }).from(profiles).where(eq(profiles.userId, userId)).limit(1);
+    return p ? { sex: p.sex, age: ageOn(p.birthDate, date) } : null;
+  }
+
   /** Targets in force on a date; null before onboarding. */
   async targetsFor(userId: string, date: string): Promise<TargetsView | null> {
     const [row] = await this.db

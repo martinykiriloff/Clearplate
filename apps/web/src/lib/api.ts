@@ -76,6 +76,7 @@ export interface DiaryEntry {
   proteinG: number;
   fatG: number;
   carbsG: number;
+  micros: Record<string, number> | null;
   isEstimate: boolean;
 }
 
@@ -108,6 +109,13 @@ export interface NutrientTotals {
   satFatG: number;
   sodiumMg: number;
   coveragePct: number;
+  micros: Record<string, number>;
+  microCoveragePct: number;
+}
+
+export interface MicroTarget {
+  amount: number;
+  kind: "RDA" | "AI";
 }
 
 export interface NutrientGoals {
@@ -137,6 +145,7 @@ export interface Today {
   eaten: Totals;
   nutrients: NutrientTotals;
   nutrientGoals: NutrientGoals | null;
+  microTargets: Record<string, MicroTarget> | null;
   split: { eaten: MacroSplit; target: MacroSplit | null };
   remaining: Totals | null;
   progress: number | null;
@@ -161,6 +170,7 @@ export interface Food {
   sugarG: number | null;
   satFatG: number | null;
   sodiumMg: number | null;
+  micros: Record<string, number> | null;
   servingG: number | null;
   servingName: string | null;
   servingNameBg: string | null;

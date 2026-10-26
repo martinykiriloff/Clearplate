@@ -15,7 +15,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiProperty, ApiTags } from '@nestjs/swagger';
-import { macroSplit, nutrientGoals, remaining } from '@clearplate/targets';
+import { macroSplit, microTargets, nutrientGoals, remaining } from '@clearplate/targets';
 import { Type } from 'class-transformer';
 import { IsBoolean, IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { and, asc, desc, eq, isNull, lte, sql } from 'drizzle-orm';
@@ -160,12 +160,16 @@ function sum(entries: Pick<DiaryEntry, 'kcal' | 'proteinG' | 'fatG' | 'carbsG'>[
   return { calories: Math.round(t.calories), proteinG: r1(t.proteinG), fatG: r1(t.fatG), carbsG: r1(t.carbsG) };
 }
 
-type Secondary = { fiberG: number | null; sugarG: number | null; satFatG: number | null; sodiumMg: number | null };
-const scaleSecondary = (src: Secondary, f: number): Secondary => ({
+type MicroMap = Record<string, number>;
+type Secondary = { fiberG: number | null; sugarG: number | null; satFatG: number | null; sodiumMg: number | null; micros?: MicroMap | null };
+const scaleMicros = (m: MicroMap | null | undefined, f: number): MicroMap | null =>
+  m ? Object.fromEntries(Object.entries(m).map(([k, v]) => [k, Math.round(v * f * 1000) / 1000])) : null;
+const scaleSecondary = (src: Secondary, f: number) => ({
   fiberG: src.fiberG == null ? null : src.fiberG * f,
   sugarG: src.sugarG == null ? null : src.sugarG * f,
   satFatG: src.satFatG == null ? null : src.satFatG * f,
   sodiumMg: src.sodiumMg == null ? null : src.sodiumMg * f,
+  micros: scaleMicros(src.micros, f),
 });
 
 export interface NutrientTotals {
@@ -178,9 +182,27 @@ export interface NutrientTotals {
    * nutrient data (0–100). Below 100 the totals are a lower bound.
    */
   coveragePct: number;
+  /** Vitamins/minerals summed over entries that have data. */
+  micros: MicroMap;
+  /** Share of calories from entries with vitamin/mineral data (0–100). */
+  microCoveragePct: number;
 }
 
 function sumNutrients(entries: DiaryEntry[]): NutrientTotals {
+  const micros: MicroMap = {};
+  let microKnown = 0;
+  for (const e of entries) {
+    if (!e.micros) continue;
+    microKnown += e.kcal;
+    for (const [k, v] of Object.entries(e.micros)) micros[k] = (micros[k] ?? 0) + v;
+  }
+  for (const k of Object.keys(micros)) micros[k] = Math.round(micros[k] * 100) / 100;
+  const base = sumSecondary(entries);
+  const total = entries.reduce((sum, e) => sum + e.kcal, 0);
+  return { ...base, micros, microCoveragePct: total > 0 ? Math.round((microKnown / total) * 100) : 100 };
+}
+
+function sumSecondary(entries: DiaryEntry[]): Omit<NutrientTotals, 'micros' | 'microCoveragePct'> {
   let fiberG = 0;
   let sugarG = 0;
   let satFatG = 0;
@@ -216,6 +238,7 @@ const entryView = (e: DiaryEntry) => ({
   sugarG: e.sugarG == null ? null : r1(e.sugarG),
   satFatG: e.satFatG == null ? null : r1(e.satFatG),
   sodiumMg: e.sodiumMg == null ? null : Math.round(e.sodiumMg),
+  micros: e.micros ?? null,
   isEstimate: e.isEstimate,
   createdAt: e.createdAt,
 });
@@ -469,11 +492,12 @@ export class TodayService {
   ) {}
 
   async today(userId: string, date: string, hour?: number) {
-    const [day, targets, weight, streak] = await Promise.all([
+    const [day, targets, weight, streak, basics] = await Promise.all([
       this.diary.day(userId, date),
       this.profiles.targetsFor(userId, date),
       this.weights.latest(userId, date),
       this.diary.streak(userId, date),
+      this.profiles.basics(userId, date),
     ]);
     const left = targets ? remaining(targets, day.totals) : null;
     const nextBestFood = left ? await this.suggestions.nextBestFood(userId, day.meals, left, hour) : null;
@@ -484,6 +508,7 @@ export class TodayService {
       eaten: day.totals,
       nutrients: day.nutrients,
       nutrientGoals: goals,
+      microTargets: basics ? microTargets(basics.sex, basics.age) : null,
       split: { eaten: macroSplit(day.totals), target: targets ? macroSplit(targets) : null },
       remaining: left,
       progress: targets ? Math.round((day.totals.calories / targets.calories) * 100) : null,

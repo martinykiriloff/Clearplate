@@ -111,6 +111,7 @@ const publicColumns = {
   sugarG: foods.sugarG,
   satFatG: foods.satFatG,
   sodiumMg: foods.sodiumMg,
+  micros: foods.micros,
   servingG: foods.servingG,
   servingName: foods.servingName,
   servingNameBg: foods.servingNameBg,
