@@ -1,13 +1,20 @@
+# Full stack: docker compose up --build
+# Web: http://localhost:3000   API docs: http://localhost:4000/api/docs
+name: clearplate
+
+x-node-image: &node-image
+  NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+
 services:
   db:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-clearplate}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clearplate}
       POSTGRES_DB: ${POSTGRES_DB:-clearplate}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
@@ -15,6 +22,43 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      args: *node-image
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-clearplate}:${POSTGRES_PASSWORD:-clearplate}@db:5432/${POSTGRES_DB:-clearplate}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (openssl rand -base64 48)}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      WEB_URL: ${WEB_URL:-http://localhost:3000}
+      # Plain http on localhost: browsers would drop a Secure cookie. Set true behind HTTPS.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-}
+    ports:
+      - "${API_PORT:-4000}:4000"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        <<: *node-image
+        API_INTERNAL_URL: http://api:4000
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:3000"
 
 volumes:
   db-data:
