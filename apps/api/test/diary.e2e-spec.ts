@@ -81,6 +81,9 @@ describe('diary & today', () => {
     expect(t.nextBestFood).toMatchObject({ meal: 'lunch' });
     expect(t.nextBestFood.kcal).toBeLessThanOrEqual(t.remaining.calories);
     expect(t.nextBestFood.reason).toMatch(/protein/);
+
+    const evening = (await agent.get(`/api/today?date=${date}&hour=19`).expect(200)).body;
+    expect(evening.nextBestFood.meal).toBe('dinner');
   });
 
   it('returns a Today view without targets before onboarding', async () => {

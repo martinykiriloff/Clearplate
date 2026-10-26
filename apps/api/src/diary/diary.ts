@@ -318,9 +318,15 @@ export interface NextBestFood {
 export class SuggestionService {
   constructor(@InjectDb() private readonly db: Database) {}
 
-  async nextBestFood(userId: string, meals: { meal: MealType; entries: unknown[] }[], left: Totals): Promise<NextBestFood | null> {
+  /**
+   * @param hour the user's local hour, if the day is today: meals whose time has
+   *             passed are skipped (no breakfast suggestions at 2 pm).
+   */
+  async nextBestFood(userId: string, meals: { meal: MealType; entries: unknown[] }[], left: Totals, hour?: number): Promise<NextBestFood | null> {
     if (left.calories < 120) return null;
-    const nextMeal = meals.find((m) => m.meal !== 'snack' && m.entries.length === 0)?.meal ?? 'snack';
+    const firstSlot = hour == null ? 0 : hour < 11 ? 0 : hour < 16 ? 1 : hour < 21 ? 2 : 3;
+    const order: MealType[] = ['breakfast', 'lunch', 'dinner'];
+    const nextMeal = order.slice(firstSlot).find((m) => meals.find((g) => g.meal === m)?.entries.length === 0) ?? 'snack';
     const budget = nextMeal === 'snack' ? Math.min(left.calories, 350) : left.calories;
     const proteinGap = Math.max(left.proteinG, 0);
 
@@ -359,7 +365,7 @@ export class TodayService {
     private readonly suggestions: SuggestionService,
   ) {}
 
-  async today(userId: string, date: string) {
+  async today(userId: string, date: string, hour?: number) {
     const [day, targets, weight, streak] = await Promise.all([
       this.diary.day(userId, date),
       this.profiles.targetsFor(userId, date),
@@ -367,7 +373,7 @@ export class TodayService {
       this.diary.streak(userId, date),
     ]);
     const left = targets ? remaining(targets, day.totals) : null;
-    const nextBestFood = left ? await this.suggestions.nextBestFood(userId, day.meals, left) : null;
+    const nextBestFood = left ? await this.suggestions.nextBestFood(userId, day.meals, left, hour) : null;
     return {
       date,
       targets,
@@ -390,10 +396,14 @@ export class DiaryController {
     private readonly todayService: TodayService,
   ) {}
 
-  /** Everything the Today screen needs in one call: Goal − Food = Left. */
+  /**
+   * Everything the Today screen needs in one call: Goal − Food = Left.
+   * `hour` (0-23) is the user's local hour, used to suggest the next meal.
+   */
   @Get('today')
-  today(@CurrentUser() user: AuthUser, @Query('date') date?: string) {
-    return this.todayService.today(user.id, parseDateParam(date));
+  today(@CurrentUser() user: AuthUser, @Query('date') date?: string, @Query('hour') hour?: string) {
+    const h = hour != null && /^\d{1,2}$/.test(hour) && Number(hour) < 24 ? Number(hour) : undefined;
+    return this.todayService.today(user.id, parseDateParam(date), h);
   }
 
   @Get('diary')
