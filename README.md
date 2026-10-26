@@ -7,7 +7,7 @@ Goals: sharp thinking, steady energy, fat loss — without guesswork.
 
 | Layer | Choice |
 | --- | --- |
-| API | NestJS 11, Prisma, PostgreSQL 16 (`pg_trgm` for food search), OpenAPI at `/api/docs` |
+| API | NestJS 11, Drizzle ORM, PostgreSQL 16 (`pg_trgm` for food search), OpenAPI at `/api/docs` |
 | Web | Next.js (App Router) + shadcn/ui + Tailwind CSS |
 | Shared | `@clearplate/targets` — pure TypeScript targets engine (BMR, TDEE, macros, safety floors) |
 | Runtime | Docker Compose: `db`, `api`, `web` |
@@ -40,7 +40,8 @@ docker compose up --build
 ```bash
 pnpm install
 docker compose up -d db
-pnpm --filter @clearplate/api prisma:migrate
+pnpm --filter @clearplate/targets build
+pnpm --filter @clearplate/api db:migrate:dev
 pnpm --filter @clearplate/api seed
 pnpm dev:api
 pnpm dev:web
