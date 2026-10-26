@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { useI18n, type I18n } from "@/i18n/provider";
 import { api, MEALS, type DiaryEntry, type Meal, type MealGroup } from "@/lib/api";
+import { shiftIsoDate } from "@/lib/utils";
 
 function describe(e: DiaryEntry, { t, n, n1 }: I18n) {
   if (e.grams != null) return `${n(e.grams)} ${t.common.g}`;
@@ -16,7 +17,7 @@ function describe(e: DiaryEntry, { t, n, n1 }: I18n) {
   return t.mealList.quickAdd;
 }
 
-export function MealList({ meals, onChange }: { meals: MealGroup[]; onChange: () => void }) {
+export function MealList({ meals, date, onChange }: { meals: MealGroup[]; date?: string; onChange: () => void }) {
   const i18n = useI18n();
   const { t, n, n1, pick } = i18n;
   const [editing, setEditing] = useState<DiaryEntry | null>(null);
@@ -47,7 +48,10 @@ export function MealList({ meals, onChange }: { meals: MealGroup[]; onChange: ()
             </span>
           </h3>
           {group.entries.length === 0 ? (
-            <p className="py-3 text-sm text-muted-foreground">{t.mealList.nothing}</p>
+            <div className="flex flex-wrap items-center justify-between gap-2 py-2">
+              <p className="text-sm text-muted-foreground">{t.mealList.nothing}</p>
+              {date && <RepeatYesterday date={date} meal={group.meal} onDone={onChange} />}
+            </div>
           ) : (
             <ul>
               {group.entries.map((e) => (
@@ -151,5 +155,34 @@ function EditEntry({ entry, onSaved }: { entry: DiaryEntry; onSaved: () => void 
         </Button>
       </DialogFooter>
     </form>
+  );
+}
+
+/** One tap to log what you ate for this meal yesterday (the most common repeat). */
+function RepeatYesterday({ date, meal, onDone }: { date: string; meal: Meal; onDone: () => void }) {
+  const { t, errorText } = useI18n();
+  const [pending, setPending] = useState(false);
+  return (
+    <Button
+      variant="link"
+      size="sm"
+      disabled={pending}
+      onClick={async () => {
+        setPending(true);
+        try {
+          const res = await api<{ copied: number }>("/diary/copy", { method: "POST", json: { fromDate: shiftIsoDate(date, -1), toDate: date, meal } });
+          if (res.copied > 0) {
+            toast.success(t.repeat.done(res.copied));
+            onDone();
+          } else toast(t.repeat.nothing);
+        } catch (err) {
+          toast.error(errorText(err));
+        } finally {
+          setPending(false);
+        }
+      }}
+    >
+      {t.repeat.yesterday(t.mealsInline[meal])}
+    </Button>
   );
 }

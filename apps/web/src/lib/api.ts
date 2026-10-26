@@ -102,10 +102,42 @@ export interface NextBestFood {
   reason: { kind: "protein_gap"; coveredG: number; gapG: number } | { kind: "fits_budget"; leftKcal: number };
 }
 
+export interface NutrientTotals {
+  fiberG: number;
+  sugarG: number;
+  satFatG: number;
+  sodiumMg: number;
+  coveragePct: number;
+}
+
+export interface NutrientGoals {
+  fiberMinG: number;
+  satFatMaxG: number;
+  sodiumMaxMg: number;
+}
+
+export interface MacroSplit {
+  protein: number;
+  fat: number;
+  carbs: number;
+}
+
+export type PaidModule = "barcode" | "insights" | "recipes" | "data";
+
+export interface Billing {
+  modules: Record<PaidModule, boolean>;
+  entitlements: { module: PaidModule | "all"; source: "stripe" | "grant"; status: string; currentPeriodEnd: string | null }[];
+  payments: boolean;
+  plans: { plan: "barcode" | "all"; module: string; intervals: ("month" | "year")[] }[];
+}
+
 export interface Today {
   date: string;
   targets: Targets | null;
   eaten: Totals;
+  nutrients: NutrientTotals;
+  nutrientGoals: NutrientGoals | null;
+  split: { eaten: MacroSplit; target: MacroSplit | null };
   remaining: Totals | null;
   progress: number | null;
   meals: MealGroup[];
@@ -126,6 +158,9 @@ export interface Food {
   fatG: number;
   carbsG: number;
   fiberG: number | null;
+  sugarG: number | null;
+  satFatG: number | null;
+  sodiumMg: number | null;
   servingG: number | null;
   servingName: string | null;
   servingNameBg: string | null;

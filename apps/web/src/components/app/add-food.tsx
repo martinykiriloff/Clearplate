@@ -1,17 +1,19 @@
 "use client";
 
-import { LockIcon, SearchIcon } from "lucide-react";
-import { useDeferredValue, useState } from "react";
+import { LockIcon, ScanBarcodeIcon, SearchIcon } from "lucide-react";
+import Link from "next/link";
+import { useCallback, useDeferredValue, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BarcodeScanner } from "@/components/app/barcode-scanner";
 import { useI18n } from "@/i18n/provider";
+import { useBilling } from "@/lib/billing";
 import { api, ApiError, fetcher, MEALS, type DiaryEntry, type Food, type Meal, type Recipe } from "@/lib/api";
 
 /** Suggest the meal by time of day; the user can always change it. */
@@ -247,30 +249,60 @@ function QuickEstimate({ onSubmit }: { onSubmit: (q: { label: string; kcal: numb
 }
 
 function BarcodeLookup({ onPick }: { onPick: (f: Food) => void }) {
-  const { t } = useI18n();
+  const { t, href } = useI18n();
   const a = t.addFood;
+  const { has, isLoading } = useBilling();
   const [code, setCode] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const canScan = has("barcode");
+
+  const lookup = useCallback(
+    async (value: string, viaScan: boolean) => {
+      setMessage(null);
+      try {
+        onPick(await api<Food>(viaScan ? `/foods/scan/${value}` : `/foods/barcode/${value}`));
+      } catch (err) {
+        setMessage(err instanceof ApiError && err.status === 404 ? t.scan.notFound(value) : a.lookupFailed);
+      }
+    },
+    [onPick, t, a],
+  );
+
+  const onDetected = useCallback(
+    (value: string) => {
+      setScanning(false);
+      void lookup(value, true);
+    },
+    [lookup],
+  );
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-input p-4">
-        <LockIcon aria-hidden="true" className="text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold">{a.scanLocked}</p>
-          <p className="text-sm text-muted-foreground">{a.scanLockedHint}</p>
-        </div>
-        <Badge variant="outline">{a.paid}</Badge>
-      </div>
+      {canScan ? (
+        <Button type="button" size="lg" className="self-start" onClick={() => setScanning(true)}>
+          <ScanBarcodeIcon aria-hidden="true" />
+          {t.scan.scan}
+        </Button>
+      ) : (
+        !isLoading && (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-input p-4">
+            <LockIcon aria-hidden="true" className="text-muted-foreground" />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">{a.scanLocked}</p>
+              <p className="text-sm text-muted-foreground">{a.scanLockedHint}</p>
+            </div>
+            <Button asChild variant="outline" size="sm">
+              <Link href={href("/upgrade")}>{t.scan.locked}</Link>
+            </Button>
+          </div>
+        )
+      )}
       <form
         className="flex flex-wrap items-end gap-3"
-        onSubmit={async (e) => {
+        onSubmit={(e) => {
           e.preventDefault();
-          setMessage(null);
-          try {
-            onPick(await api<Food>(`/foods/barcode/${code.trim()}`));
-          } catch (err) {
-            setMessage(err instanceof ApiError && err.status === 404 ? a.notFound : a.lookupFailed);
-          }
+          void lookup(code.trim(), false);
         }}
       >
         <div className="flex min-w-48 flex-1 flex-col gap-2">
@@ -286,6 +318,16 @@ function BarcodeLookup({ onPick }: { onPick: (f: Food) => void }) {
           {message}
         </p>
       )}
+
+      <Dialog open={scanning} onOpenChange={setScanning}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t.scan.title}</DialogTitle>
+            <DialogDescription>{t.scan.hint}</DialogDescription>
+          </DialogHeader>
+          {scanning && <BarcodeScanner onDetected={onDetected} />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -330,6 +372,7 @@ function AmountForm({ picked, meal, onConfirm }: { picked: Pick; meal: Meal; onC
         <Input id="amount" type="number" inputMode="decimal" min={isFood ? 1 : 0.25} step={isFood ? 1 : 0.25} value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
         {servingName && isFood && <p className="text-sm text-muted-foreground">{a.servingApprox(servingName, n(picked.food.servingG))}</p>}
       </div>
+      {isFood && picked.food.source === "open_food_facts" && <p className="text-xs text-muted-foreground">{t.scan.offCredit}</p>}
       {isFood && (
         <label className="flex cursor-pointer items-center gap-3 text-sm">
           <input type="checkbox" className="size-5 accent-[var(--primary)]" checked={estimate} onChange={(e) => setEstimate(e.target.checked)} />

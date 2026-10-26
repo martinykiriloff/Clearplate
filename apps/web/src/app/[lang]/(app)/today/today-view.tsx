@@ -7,6 +7,7 @@ import useSWR from "swr";
 import { AddFood } from "@/components/app/add-food";
 import { BudgetCard } from "@/components/app/budget-card";
 import { MealList } from "@/components/app/meal-list";
+import { NutritionPanel } from "@/components/app/nutrition-panel";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/i18n/provider";
@@ -52,8 +53,9 @@ export function TodayView() {
             <h2 id="eaten-title" className="text-xl font-semibold">
               {t.today.todaysFood}
             </h2>
-            <MealList meals={data.meals} onChange={refresh} />
+            <MealList meals={data.meals} date={date} onChange={refresh} />
           </section>
+          <NutritionPanel data={data} />
         </div>
 
         <aside className="flex min-w-0 flex-[1_1_300px] flex-col gap-6">

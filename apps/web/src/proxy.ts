@@ -8,7 +8,7 @@ import { LOCALE_COOKIE, isLocale, negotiateLocale, splitLocale } from "@/i18n/co
  * 2. Fast, optimistic auth redirects by session cookie. The API still
  *    validates the session on every request.
  */
-const APP_PATHS = ["/today", "/diary", "/recipes", "/progress", "/settings", "/onboarding"];
+const APP_PATHS = ["/today", "/diary", "/recipes", "/progress", "/settings", "/onboarding", "/upgrade"];
 const AUTH_PATHS = ["/login", "/register"];
 const YEAR = 60 * 60 * 24 * 365;
 

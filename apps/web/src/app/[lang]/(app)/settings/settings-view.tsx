@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/i18n/provider";
 import { api, fetcher, type Profile, type Targets } from "@/lib/api";
+import { useBilling } from "@/lib/billing";
 import { hardNavigate, useUser } from "@/lib/session";
 import { localIsoDate } from "@/lib/utils";
 
@@ -17,6 +18,8 @@ export function SettingsView() {
   const { t, n, href } = useI18n();
   const s = t.settings;
   const { user } = useUser();
+  const { billing } = useBilling();
+  const activeModules = billing ? (Object.entries(billing.modules) as [keyof typeof t.billing.modules, boolean][]).filter(([, on]) => on).map(([m]) => t.billing.modules[m][0]) : [];
   const { data } = useSWR<{ profile: Profile; targets: Targets | null }>(`/profile?date=${localIsoDate()}`, fetcher);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [typed, setTyped] = useState("");
@@ -41,6 +44,14 @@ export function SettingsView() {
             {s.logoutAll}
           </Button>
         </div>
+      </section>
+
+      <section className="flex flex-col gap-3 rounded-xl border bg-card p-6">
+        <h2 className="text-xs font-semibold tracking-[0.06em] text-muted-foreground uppercase">{t.billing.yourPlan}</h2>
+        <p>{activeModules.length ? activeModules.join(" · ") : t.billing.free}</p>
+        <Button asChild variant="outline" className="self-start">
+          <Link href={href("/upgrade")}>{t.billing.upgrade}</Link>
+        </Button>
       </section>
 
       <section className="flex flex-col gap-3 rounded-xl border bg-card p-6">

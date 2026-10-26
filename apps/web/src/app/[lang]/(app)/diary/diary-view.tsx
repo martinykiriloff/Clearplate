@@ -5,6 +5,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import { AddFood } from "@/components/app/add-food";
 import { MealList } from "@/components/app/meal-list";
+import { NutritionPanel } from "@/components/app/nutrition-panel";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/i18n/provider";
@@ -54,12 +55,13 @@ export function DiaryView() {
           )}
           <div className="flex flex-wrap items-start gap-6">
             <section aria-label={d.logged} className="min-w-0 flex-[999_1_520px] rounded-xl border bg-card p-6">
-              <MealList meals={data.meals} onChange={refresh} />
+              <MealList meals={data.meals} date={date} onChange={refresh} />
             </section>
             <div className="min-w-0 flex-[1_1_380px]">
               <AddFood key={date} date={date} onAdded={refresh} />
             </div>
           </div>
+          <NutritionPanel data={data} />
         </>
       )}
     </div>
