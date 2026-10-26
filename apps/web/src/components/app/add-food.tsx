@@ -252,20 +252,22 @@ function BarcodeLookup({ onPick }: { onPick: (f: Food) => void }) {
   const { t, href } = useI18n();
   const a = t.addFood;
   // The allowance is per local day, so the client says which day it is.
-  const today = localIsoDate();
-  const { data: quota, mutate: refreshQuota } = useSWR<ScanQuota>(`/foods/scan/quota?today=${today}`, fetcher);
+  const { data: quota, mutate: refreshQuota } = useSWR<ScanQuota>(`/foods/scan/quota?today=${localIsoDate()}`, fetcher);
   const [code, setCode] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
-  const unlimited = quota?.limit == null;
-  const usedUp = !!quota && quota.remaining === 0;
+  /** Null while unknown or unlimited: the server is the gate, so scanning stays available. */
+  const free = quota && quota.limit != null ? { left: quota.remaining ?? 0, limit: quota.limit } : null;
+  const usedUp = free?.left === 0;
 
   const lookup = useCallback(
     async (value: string, viaScan: boolean) => {
       setMessage(null);
+      // Read the date at scan time: the tab may have been open since before midnight.
+      const today = localIsoDate();
       try {
-        onPick(await api<Food>(viaScan ? `/foods/scan/${value}?today=${today}` : `/foods/barcode/${value}`));
-        if (viaScan) void refreshQuota();
+        onPick(await api<Food>(`/foods/${viaScan ? "scan" : "barcode"}/${value}?today=${today}`));
+        void refreshQuota();
       } catch (err) {
         if (err instanceof ApiError && err.status === 402) {
           setMessage(a.scansUsedUp);
@@ -275,7 +277,7 @@ function BarcodeLookup({ onPick }: { onPick: (f: Food) => void }) {
         }
       }
     },
-    [onPick, t, a, today, refreshQuota],
+    [onPick, t, a, refreshQuota],
   );
 
   const onDetected = useCallback(
@@ -288,34 +290,33 @@ function BarcodeLookup({ onPick }: { onPick: (f: Food) => void }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {quota &&
-        (usedUp ? (
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-input p-4">
-            <LockIcon aria-hidden="true" className="text-muted-foreground" />
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold">{a.scansUsedUp}</p>
-              <p className="text-sm text-muted-foreground">{a.scanLockedHint(quota.limit ?? 0)}</p>
-            </div>
-            <Button asChild variant="outline" size="sm">
-              <Link href={href("/upgrade")}>{t.scan.locked}</Link>
-            </Button>
+      {usedUp && free ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-input p-4">
+          <LockIcon aria-hidden="true" className="text-muted-foreground" />
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">{a.scansUsedUp}</p>
+            <p className="text-sm text-muted-foreground">{a.scanLockedHint(free.limit)}</p>
           </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <Button type="button" size="lg" onClick={() => setScanning(true)}>
-              <ScanBarcodeIcon aria-hidden="true" />
-              {t.scan.scan}
-            </Button>
-            {!unlimited && quota.remaining != null && quota.limit != null && (
-              <p className="text-sm text-muted-foreground">
-                {a.scansLeft(quota.remaining, quota.limit)} ·{" "}
-                <Link href={href("/upgrade")} className="underline underline-offset-4 hover:text-foreground">
-                  {t.scan.locked}
-                </Link>
-              </p>
-            )}
-          </div>
-        ))}
+          <Button asChild variant="outline" size="sm">
+            <Link href={href("/upgrade")}>{t.scan.locked}</Link>
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Button type="button" size="lg" onClick={() => setScanning(true)}>
+            <ScanBarcodeIcon aria-hidden="true" />
+            {t.scan.scan}
+          </Button>
+          {free && (
+            <p className="text-sm text-muted-foreground">
+              {a.scansLeft(free.left, free.limit)} ·{" "}
+              <Link href={href("/upgrade")} className="underline underline-offset-4 hover:text-foreground">
+                {t.scan.locked}
+              </Link>
+            </p>
+          )}
+        </div>
+      )}
       <form
         className="flex flex-wrap items-end gap-3"
         onSubmit={(e) => {

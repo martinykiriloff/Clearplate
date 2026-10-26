@@ -137,6 +137,8 @@ export interface Billing {
   entitlements: { module: PaidModule | "all"; source: "stripe" | "grant"; status: string; currentPeriodEnd: string | null }[];
   payments: boolean;
   plans: { plan: "barcode" | "all"; module: string; intervals: ("month" | "year")[] }[];
+  /** Barcode lookups a free account gets per day. */
+  freeScansPerDay: number;
 }
 
 /** Camera scans left today. `limit`/`remaining` are null with the Barcode module (unlimited). */

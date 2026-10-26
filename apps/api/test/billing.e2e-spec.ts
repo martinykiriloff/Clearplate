@@ -24,6 +24,7 @@ describe('billing & entitlements', () => {
     );
     const quota = await agent.get('/api/foods/scan/quota').expect(200);
     expect(quota.body).toMatchObject({ limit: 5, used: 0, remaining: 5 });
+    expect(res.body.freeScansPerDay).toBe(5);
   });
 
   it('applies ENTITLEMENT_GRANTS at sign-up ("all" unlocks every module)', async () => {

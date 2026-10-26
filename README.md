@@ -96,8 +96,9 @@ Adding a language: add it to `LOCALES` in `apps/web/src/i18n/config.ts`, add a d
 - Email + password auth, optional Google / Facebook, account deletion (GDPR Art. 17)
 - 5-step questionnaire with live plan preview, explicit health-data consent, 18+ gate
 - Today: Goal − Food = Left, macros, next best food, weight trend, streak
-- Diary: search (typo tolerant), recent, recipes, quick estimate, lookup by barcode number; edit, remove, undo
-- Camera barcode scanning: 5 distinct products a day for free (`FREE_SCANS_PER_DAY`), unlimited with the Barcode module
+- Diary: search (typo tolerant), recent, recipes, quick estimate, barcode lookup; edit, remove, undo
+- Barcode lookup by camera or typed number: 5 distinct products a day for free (`FREE_SCANS_PER_DAY`),
+  unlimited with the Barcode module. Both routes share one allowance, since the server cannot tell them apart.
 - Recipes with a "fits what's left today" filter; Progress with smoothed weight trend
 
 Not yet: adaptive target correction, mobile apps,

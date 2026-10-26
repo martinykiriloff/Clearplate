@@ -1,7 +1,7 @@
 import { Body, ConflictException, Controller, Get, Inject, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsDateString, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { and, desc, eq, ilike, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { AuthUser, CurrentUser } from '../auth/decorators';
 import { clientToday } from '../common/dates';
@@ -24,10 +24,10 @@ export class SearchFoodsQuery {
   limit?: number;
 }
 
-/** The client's local date, so the daily scan allowance resets at the user's midnight. */
+/** The client's local date, so the daily lookup allowance resets at the user's midnight. */
 export class ScanQuery {
   @IsOptional()
-  @IsString()
+  @IsDateString({ strict: true })
   today?: string;
 }
 
@@ -250,32 +250,28 @@ export class FoodsController {
     return this.foodsService.recent(user.id);
   }
 
-  /** Free lookup by the number printed under a barcode. Camera scanning is the paid module. */
-  @Get('barcode/:code')
-  byBarcode(@CurrentUser() user: AuthUser, @Param('code') code: string) {
-    if (!/^\d{8,14}$/.test(code)) throw new NotFoundException('No food with this barcode yet');
-    return this.foodsService.byBarcode(user.id, code);
-  }
-
-  /** How many camera scans are left today (unlimited with the Barcode module). */
+  /** How many barcode lookups are left today (unlimited with the Barcode module). */
   @Get('scan/quota')
   quota(@CurrentUser() user: AuthUser, @Query() query: ScanQuery) {
     return this.scanQuota.status(user.id, clientToday(query.today));
   }
 
   /**
-   * Camera scan: same lookup as `barcode/:code`, for the one-step scan-and-log
-   * flow. Free accounts get FREE_SCANS_PER_DAY distinct products per day and a
-   * 402 `scan_limit_reached` after that; the Barcode module lifts the limit.
+   * Lookup by barcode, whether the camera read it or the user typed the number
+   * (the server cannot tell them apart, so both share one allowance). Free
+   * accounts get FREE_SCANS_PER_DAY distinct products per day and a 402
+   * `scan_limit_reached` after that; the Barcode module lifts the limit.
    */
-  @Get('scan/:code')
-  async scan(@CurrentUser() user: AuthUser, @Param('code') code: string, @Query() query: ScanQuery) {
+  @Get(['barcode/:code', 'scan/:code'])
+  async byBarcode(@CurrentUser() user: AuthUser, @Param('code') code: string, @Query() query: ScanQuery) {
     if (!/^\d{8,14}$/.test(code)) throw new NotFoundException('No food with this barcode yet');
-    const today = clientToday(query.today);
-    await this.scanQuota.assertAllowed(user.id, today, code);
-    const food = await this.foodsService.byBarcode(user.id, code);
-    await this.scanQuota.record(user.id, today, code);
-    return food;
+    const charge = await this.scanQuota.charge(user.id, clientToday(query.today), code);
+    try {
+      return await this.foodsService.byBarcode(user.id, code);
+    } catch (err) {
+      await this.scanQuota.refund(charge);
+      throw err;
+    }
   }
 
   @Get(':id')
