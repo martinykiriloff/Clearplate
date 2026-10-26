@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { runMigrations } from '../src/db/migrate';
+import { seed } from '../src/db/seed';
 
 /** Fresh schema per e2e run on the test database. */
 export default async function globalSetup() {
@@ -9,4 +10,5 @@ export default async function globalSetup() {
   await pool.query('DROP SCHEMA IF EXISTS public CASCADE; DROP SCHEMA IF EXISTS drizzle CASCADE; CREATE SCHEMA public;');
   await pool.end();
   await runMigrations(url);
+  await seed(url);
 }
