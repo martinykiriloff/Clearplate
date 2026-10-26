@@ -7,47 +7,100 @@ Goals: sharp thinking, steady energy, fat loss — without guesswork.
 
 | Layer | Choice |
 | --- | --- |
-| API | NestJS 11, Prisma, PostgreSQL 16 (`pg_trgm` for food search), OpenAPI at `/api/docs` |
-| Web | Next.js (App Router) + shadcn/ui + Tailwind CSS |
+| API | NestJS 11, Drizzle ORM, PostgreSQL 16 (`pg_trgm` for food search), OpenAPI at `/api/docs` |
+| Web | Next.js 16 (App Router, Turbopack) + shadcn/ui + Tailwind CSS 4 |
 | Shared | `@clearplate/targets` — pure TypeScript targets engine (BMR, TDEE, macros, safety floors) |
 | Runtime | Docker Compose: `db`, `api`, `web` |
 
 MongoDB is intentionally not used: every entity (users, diary, foods, recipes, weights) is relational,
-and Postgres covers full-text and fuzzy search.
+and Postgres covers full-text and fuzzy search. Drizzle was chosen over Prisma: pure TypeScript, SQL-first,
+no engine binaries to download at build or run time.
 
 ## Layout
 
 ```
 apps/
-  api/        NestJS REST API
-  web/        Next.js web app
+  api/        NestJS REST API (src/<module>, drizzle/ migrations, test/ e2e)
+  web/        Next.js web app (src/app routes, src/components/ui = shadcn)
 packages/
-  targets/    shared targets engine
+  targets/    shared targets engine + unit tests
 ```
 
 ## Run everything in Docker
 
 ```bash
-cp .env.example .env      # set JWT_SECRET at minimum
+cp .env.example .env
+# set JWT_SECRET (openssl rand -base64 48); everything else has defaults
 docker compose up --build
 ```
 
 - Web: http://localhost:3000
-- API: http://localhost:4000/api (docs: http://localhost:4000/api/docs)
+- API docs: http://localhost:4000/api/docs
+
+On start the API applies migrations and seeds the starter catalogue (idempotent).
+The browser only talks to the web origin: `/api/*` is proxied to the API, so the session
+cookie is first-party and OAuth callbacks land on the web app.
+
+Behind HTTPS set `COOKIE_SECURE=true` and `WEB_URL=https://your-domain`.
+
+### Google and Facebook sign-in
+
+Leave the variables empty to hide the buttons. To enable, set the client id/secret in `.env` and register
+these redirect URIs with the provider:
+
+- `${WEB_URL}/api/auth/google/callback`
+- `${WEB_URL}/api/auth/facebook/callback`
 
 ## Local development
 
 ```bash
 pnpm install
 docker compose up -d db
-pnpm --filter @clearplate/api prisma:migrate
+pnpm --filter @clearplate/targets build
+pnpm --filter @clearplate/api db:migrate:dev
 pnpm --filter @clearplate/api seed
-pnpm dev:api
-pnpm dev:web
+pnpm dev:api        # :4000
+pnpm dev:web        # :3000
 ```
 
-## Status
+Schema changes: edit `apps/api/src/db/schema.ts`, then `pnpm --filter @clearplate/api db:generate`.
 
-Web v1 thin slice (see the PRD): email login, questionnaire, targets, food search and diary, recipes, weight trend.
-Google and Facebook sign-in switch on when their client IDs are set in `.env`.
-Barcode scanning is a paid module and is out of the v1 scope; looking a food up by its barcode number is free.
+## Tests
+
+```bash
+pnpm --filter @clearplate/targets test      # engine unit tests
+pnpm --filter @clearplate/api test:e2e      # API e2e, needs Postgres; uses TEST_DATABASE_URL
+                                            # (default postgresql://clearplate:clearplate@localhost:5432/clearplate_test)
+pnpm --filter @clearplate/web lint          # typecheck + eslint
+```
+
+## Languages
+
+English and Bulgarian, end to end:
+
+- Every page lives under `/en/...` or `/bg/...` (both prerendered). Unprefixed URLs redirect to the
+  remembered language (`cp_locale` cookie), else the browser's `Accept-Language`.
+- UI strings: `apps/web/src/i18n/en.ts` and `bg.ts` (`bg` is type-checked against the English shape,
+  so a missing translation fails the build). Numbers and dates use `Intl` (`en-US` / `bg-BG`).
+- The user's language is saved on the account (`users.locale`) and restored at login; the EN/BG switch
+  is in the header and in Settings.
+- Content: foods and recipes carry Bulgarian names/texts (`name_bg`, `ingredients_bg`, `method_bg`);
+  search matches both languages. The API returns structured data (e.g. the next-best-food reason) so
+  clients phrase it themselves.
+
+Adding a language: add it to `LOCALES` in `apps/web/src/i18n/config.ts`, add a dictionary, extend the
+`locale` enum in the API schema.
+
+## Status (web v1 thin slice)
+
+- Email + password auth, optional Google / Facebook, account deletion (GDPR Art. 17)
+- 5-step questionnaire with live plan preview, explicit health-data consent, 18+ gate
+- Today: Goal − Food = Left, macros, next best food, weight trend, streak
+- Diary: search (typo tolerant), recent, recipes, quick estimate, lookup by barcode number; edit, remove, undo
+- Recipes with a "fits what's left today" filter; Progress with smoothed weight trend
+
+Not yet: camera barcode scanning (paid module), payments, adaptive target correction, mobile apps,
+licensed food database import. The starter catalogue (134 foods, 30 recipes) uses rounded USDA-style
+reference values and is marked unverified.
+
+Clearplate is a wellness tool, not medical advice.

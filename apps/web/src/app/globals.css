@@ -1,0 +1,91 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Clearplate theme (design direction "A + B"):
+ * dark slate ground, one lime accent for "what's left", amber/blue for
+ * fat/carbs. Numbers use IBM Plex Mono so columns line up.
+ * Contrast: muted text #B5C2CC on #18222A ≈ 9:1; lime on #10161C ≈ 14:1.
+ */
+:root {
+  --radius: 0.75rem;
+
+  --background: #10161c;
+  --foreground: #e8eef2;
+  --card: #18222a;
+  --card-foreground: #e8eef2;
+  --popover: #18222a;
+  --popover-foreground: #e8eef2;
+  --primary: #c6f25b;
+  --primary-foreground: #10161c;
+  --secondary: #1e2a33;
+  --secondary-foreground: #e8eef2;
+  --muted: #1e2a33;
+  --muted-foreground: #b5c2cc;
+  --accent: #1e2a33;
+  --accent-foreground: #c6f25b;
+  --destructive: #ff8a7a;
+  --destructive-foreground: #10161c;
+  --border: #26323c;
+  --input: #4a5a66;
+  --ring: #c6f25b;
+
+  --protein: #3987e5;
+  --fat: #c98500;
+  --carbs: #d55181;
+  --estimate: #f2b24a;
+  --track: #2c3a45;
+}
+
+@theme inline {
+  --font-sans: "Onest Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-protein: var(--protein);
+  --color-fat: var(--fat);
+  --color-carbs: var(--carbs);
+  --color-estimate: var(--estimate);
+  --color-track: var(--track);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+  .tabular {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}

@@ -2,7 +2,9 @@
   "name": "clearplate",
   "private": true,
   "packageManager": "pnpm@10.28.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
@@ -10,5 +12,14 @@
     "dev:api": "pnpm --filter @clearplate/api start:dev",
     "dev:web": "pnpm --filter @clearplate/web dev",
     "db:up": "docker compose up -d db"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "argon2",
+      "@nestjs/core",
+      "esbuild",
+      "sharp",
+      "unrs-resolver"
+    ]
   }
 }

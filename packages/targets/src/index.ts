@@ -1,0 +1,323 @@
+/**
+ * Clearplate targets engine.
+ *
+ * Pure functions, no I/O: the API and every client compute the same numbers.
+ *
+ * - BMR: Mifflin–St Jeor.
+ * - TDEE: BMR × activity factor (1.2–1.9).
+ * - Calories: TDEE adjusted by goal and pace, never below the safety floor
+ *   (1500 kcal for men, 1200 kcal for women) — unless maintenance itself is
+ *   lower, in which case we hold maintenance rather than create a surplus.
+ * - Protein: g/kg of a *reference* weight, so people with higher body fat
+ *   are not given inflated protein targets.
+ * - Fat: at least 0.6 g/kg reference weight and about 27% of calories.
+ * - Carbs: the remainder.
+ */
+
+export type Sex = 'male' | 'female';
+export type Goal = 'lose' | 'gain' | 'habits';
+export type Pace = 'gentle' | 'standard' | 'fast';
+export type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
+
+export interface TargetsInput {
+  sex: Sex;
+  age: number;
+  heightCm: number;
+  weightKg: number;
+  activity: ActivityLevel;
+  goal: Goal;
+  pace?: Pace;
+  targetWeightKg?: number | null;
+}
+
+export type TargetsWarning =
+  | 'calorie_floor_applied'
+  | 'deficit_capped'
+  | 'underweight_no_deficit'
+  | 'carbs_at_minimum'
+  | 'maintenance_below_floor';
+
+export interface Targets {
+  bmr: number;
+  tdee: number;
+  calories: number;
+  proteinG: number;
+  fatG: number;
+  carbsG: number;
+  referenceWeightKg: number;
+  /** Expected weekly weight change in kg (negative = loss). An estimate. */
+  expectedWeeklyChangeKg: number;
+  warnings: TargetsWarning[];
+}
+
+export const ACTIVITY_FACTORS: Record<ActivityLevel, number> = {
+  sedentary: 1.2,
+  light: 1.375,
+  moderate: 1.55,
+  active: 1.725,
+  very_active: 1.9,
+};
+
+/** Deficit as a share of TDEE for each pace. */
+export const DEFICIT_BY_PACE: Record<Pace, number> = {
+  gentle: 0.1,
+  standard: 0.2,
+  fast: 0.25,
+};
+
+export const SURPLUS_SHARE = 0.1;
+export const MAX_DEFICIT_KCAL = 1000;
+export const MAX_SURPLUS_KCAL = 500;
+export const CALORIE_FLOOR: Record<Sex, number> = { male: 1500, female: 1200 };
+export const KCAL_PER_KG_FAT = 7700;
+export const MIN_CARBS_G = 50;
+
+export const LIMITS = {
+  age: { min: 18, max: 100 },
+  heightCm: { min: 120, max: 230 },
+  weightKg: { min: 35, max: 350 },
+} as const;
+
+export class TargetsInputError extends Error {
+  constructor(public readonly field: keyof typeof LIMITS | 'targetWeightKg', message: string) {
+    super(message);
+    this.name = 'TargetsInputError';
+  }
+}
+
+export function validateInput(input: TargetsInput): void {
+  for (const field of Object.keys(LIMITS) as (keyof typeof LIMITS)[]) {
+    const value = input[field];
+    const { min, max } = LIMITS[field];
+    if (!Number.isFinite(value) || value < min || value > max) {
+      throw new TargetsInputError(field, `${field} must be between ${min} and ${max}`);
+    }
+  }
+  if (input.targetWeightKg != null) {
+    const { min, max } = LIMITS.weightKg;
+    if (input.targetWeightKg < min || input.targetWeightKg > max) {
+      throw new TargetsInputError('targetWeightKg', `targetWeightKg must be between ${min} and ${max}`);
+    }
+  }
+}
+
+export function bmr({ sex, age, heightCm, weightKg }: Pick<TargetsInput, 'sex' | 'age' | 'heightCm' | 'weightKg'>): number {
+  const base = 10 * weightKg + 6.25 * heightCm - 5 * age;
+  return sex === 'male' ? base + 5 : base - 161;
+}
+
+export function bmi(weightKg: number, heightCm: number): number {
+  const m = heightCm / 100;
+  return weightKg / (m * m);
+}
+
+/**
+ * Reference weight for protein and fat.
+ * Above BMI 25 we use an adjusted weight: the BMI-25 weight plus 40% of the
+ * excess. A lower goal weight, if given and higher than that, wins.
+ */
+export function referenceWeight(weightKg: number, heightCm: number, targetWeightKg?: number | null): number {
+  const m = heightCm / 100;
+  const bmi25 = 25 * m * m;
+  if (weightKg <= bmi25) return weightKg;
+  const adjusted = bmi25 + 0.4 * (weightKg - bmi25);
+  if (targetWeightKg != null && targetWeightKg < weightKg) {
+    return Math.max(adjusted, Math.min(targetWeightKg, weightKg));
+  }
+  return adjusted;
+}
+
+const PROTEIN_G_PER_KG: Record<Goal, number> = { lose: 1.8, gain: 1.8, habits: 1.6 };
+const FAT_SHARE = 0.27;
+const MIN_FAT_G_PER_KG = 0.6;
+
+const round = (n: number, step = 1) => Math.round(n / step) * step;
+
+export function computeTargets(input: TargetsInput): Targets {
+  validateInput(input);
+  const warnings: TargetsWarning[] = [];
+  const pace = input.pace ?? 'standard';
+
+  const b = bmr(input);
+  const tdee = b * ACTIVITY_FACTORS[input.activity];
+
+  let goal = input.goal;
+  if (goal === 'lose' && bmi(input.weightKg, input.heightCm) < 18.5) {
+    warnings.push('underweight_no_deficit');
+    goal = 'habits';
+  }
+
+  let calories = tdee;
+  if (goal === 'lose') {
+    let deficit = tdee * DEFICIT_BY_PACE[pace];
+    if (deficit > MAX_DEFICIT_KCAL) {
+      deficit = MAX_DEFICIT_KCAL;
+      warnings.push('deficit_capped');
+    }
+    calories = tdee - deficit;
+  } else if (goal === 'gain') {
+    calories = tdee + Math.min(tdee * SURPLUS_SHARE, MAX_SURPLUS_KCAL);
+  }
+
+  const floor = CALORIE_FLOOR[input.sex];
+  if (calories < floor) {
+    if (tdee < floor && goal !== 'gain') {
+      // Small, sedentary bodies can burn less than the generic floor. Raising
+      // them to the floor would be a surplus, so hold maintenance instead.
+      calories = tdee;
+      warnings.push('maintenance_below_floor');
+    } else {
+      calories = floor;
+      warnings.push('calorie_floor_applied');
+    }
+  }
+  // Round to 10 kcal, never towards a deeper deficit than computed, never above maintenance.
+  calories = goal === 'lose' ? Math.min(Math.ceil(calories / 10) * 10, Math.floor(tdee)) : round(calories, 10);
+
+  const refW = referenceWeight(input.weightKg, input.heightCm, input.targetWeightKg);
+  const proteinG = round(PROTEIN_G_PER_KG[goal] * refW);
+  let fatG = round(Math.max(MIN_FAT_G_PER_KG * refW, (FAT_SHARE * calories) / 9));
+  let carbsG = round((calories - proteinG * 4 - fatG * 9) / 4);
+
+  if (carbsG < MIN_CARBS_G) {
+    // Trim fat towards its floor before going below the carb minimum.
+    const minFat = round(MIN_FAT_G_PER_KG * refW);
+    const neededKcal = (MIN_CARBS_G - carbsG) * 4;
+    const trim = Math.min(fatG - minFat, Math.ceil(neededKcal / 9));
+    fatG -= Math.max(0, trim);
+    carbsG = Math.max(0, round((calories - proteinG * 4 - fatG * 9) / 4));
+    if (carbsG < MIN_CARBS_G) warnings.push('carbs_at_minimum');
+  }
+
+  const expectedWeeklyChangeKg = Math.round((((calories - tdee) * 7) / KCAL_PER_KG_FAT) * 100) / 100;
+
+  return {
+    bmr: round(b),
+    tdee: round(tdee),
+    calories,
+    proteinG,
+    fatG,
+    carbsG,
+    referenceWeightKg: Math.round(refW * 10) / 10,
+    expectedWeeklyChangeKg,
+    warnings,
+  };
+}
+
+export interface DayTotals {
+  calories: number;
+  proteinG: number;
+  fatG: number;
+  carbsG: number;
+}
+
+/** The daily equation: goal − food = left. Negative means over budget. */
+export function remaining(targets: Pick<Targets, 'calories' | 'proteinG' | 'fatG' | 'carbsG'>, eaten: DayTotals): DayTotals {
+  return {
+    calories: round(targets.calories - eaten.calories),
+    proteinG: round(targets.proteinG - eaten.proteinG),
+    fatG: round(targets.fatG - eaten.fatG),
+    carbsG: round(targets.carbsG - eaten.carbsG),
+  };
+}
+
+/**
+ * Exponentially smoothed weight trend (alpha 0.1, as in common trend-weight methods).
+ * Input must be sorted by date ascending.
+ */
+export function weightTrend(points: { date: string; weightKg: number }[], alpha = 0.1): { date: string; weightKg: number; trendKg: number }[] {
+  let trend: number | null = null;
+  return points.map((p) => {
+    trend = trend == null ? p.weightKg : trend + alpha * (p.weightKg - trend);
+    return { ...p, trendKg: Math.round(trend * 10) / 10 };
+  });
+}
+
+export interface NutrientGoals {
+  /** At least this much (14 g per 1000 kcal, Dietary Guidelines for Americans). */
+  fiberMinG: number;
+  /** At most this much (under 10% of calories, WHO / DGA). */
+  satFatMaxG: number;
+  /** At most this much (2300 mg, DGA / EFSA ~2000 mg). */
+  sodiumMaxMg: number;
+}
+
+export function nutrientGoals(calories: number): NutrientGoals {
+  return {
+    fiberMinG: Math.round((calories / 1000) * 14),
+    satFatMaxG: Math.round((calories * 0.1) / 9),
+    sodiumMaxMg: 2300,
+  };
+}
+
+/** Share of calories from protein, fat and carbs (Atwater 4/9/4), in whole percent summing to 100. */
+export function macroSplit({ proteinG, fatG, carbsG }: { proteinG: number; fatG: number; carbsG: number }): { protein: number; fat: number; carbs: number } {
+  const kcal = { protein: proteinG * 4, fat: fatG * 9, carbs: carbsG * 4 };
+  const total = kcal.protein + kcal.fat + kcal.carbs;
+  if (total <= 0) return { protein: 0, fat: 0, carbs: 0 };
+  // Largest-remainder rounding so the three always add up to exactly 100.
+  const raw = (Object.keys(kcal) as (keyof typeof kcal)[]).map((k) => ({ k, v: (kcal[k] / total) * 100 }));
+  const floored = raw.map((r) => ({ ...r, f: Math.floor(r.v) }));
+  let rest = 100 - floored.reduce((s, r) => s + r.f, 0);
+  for (const r of [...floored].sort((a, b) => b.v - b.f - (a.v - a.f))) {
+    if (rest-- <= 0) break;
+    r.f += 1;
+  }
+  return Object.fromEntries(floored.map((r) => [r.k, r.f])) as { protein: number; fat: number; carbs: number };
+}
+
+/** Vitamins and minerals tracked against a daily reference intake. */
+export const MICRO_KEYS = [
+  'vitaminA', 'vitaminC', 'vitaminD', 'vitaminE', 'vitaminK', 'thiamin', 'riboflavin', 'niacin', 'vitaminB6', 'folate', 'vitaminB12', 'choline', 'pantothenic',
+  'calcium', 'iron', 'magnesium', 'phosphorus', 'potassium', 'zinc', 'copper', 'manganese', 'selenium',
+] as const;
+export type MicroKey = (typeof MICRO_KEYS)[number];
+
+export const MICRO_UNITS: Record<MicroKey, 'mg' | 'µg'> = {
+  vitaminA: 'µg', vitaminC: 'mg', vitaminD: 'µg', vitaminE: 'mg', vitaminK: 'µg', thiamin: 'mg', riboflavin: 'mg', niacin: 'mg', vitaminB6: 'mg',
+  folate: 'µg', vitaminB12: 'µg', choline: 'mg', pantothenic: 'mg', calcium: 'mg', iron: 'mg', magnesium: 'mg', phosphorus: 'mg', potassium: 'mg',
+  zinc: 'mg', copper: 'mg', manganese: 'mg', selenium: 'µg',
+};
+
+export interface MicroTarget {
+  amount: number;
+  /** RDA: covers ~98% of people; AI: adequate intake where no RDA exists. */
+  kind: 'RDA' | 'AI';
+}
+
+/**
+ * Daily reference intakes for adults (US National Academies DRIs; potassium
+ * per the 2019 update). Vitamin A as RAE, folate as DFE, vitamin E as
+ * alpha-tocopherol. Not for pregnancy or lactation.
+ */
+export function microTargets(sex: Sex, age: number): Record<MicroKey, MicroTarget> {
+  const m = sex === 'male';
+  const over50 = age > 50;
+  const over70 = age > 70;
+  const rda = (amount: number): MicroTarget => ({ amount, kind: 'RDA' });
+  const ai = (amount: number): MicroTarget => ({ amount, kind: 'AI' });
+  return {
+    vitaminA: rda(m ? 900 : 700),
+    vitaminC: rda(m ? 90 : 75),
+    vitaminD: rda(over70 ? 20 : 15),
+    vitaminE: rda(15),
+    vitaminK: ai(m ? 120 : 90),
+    thiamin: rda(m ? 1.2 : 1.1),
+    riboflavin: rda(m ? 1.3 : 1.1),
+    niacin: rda(m ? 16 : 14),
+    vitaminB6: rda(over50 ? (m ? 1.7 : 1.5) : 1.3),
+    folate: rda(400),
+    vitaminB12: rda(2.4),
+    choline: ai(m ? 550 : 425),
+    pantothenic: ai(5),
+    calcium: rda(over70 || (!m && over50) ? 1200 : 1000),
+    iron: rda(m || over50 ? 8 : 18),
+    magnesium: rda(m ? (age <= 30 ? 400 : 420) : age <= 30 ? 310 : 320),
+    phosphorus: rda(700),
+    potassium: ai(m ? 3400 : 2600),
+    zinc: rda(m ? 11 : 8),
+    copper: rda(0.9),
+    manganese: ai(m ? 2.3 : 1.8),
+    selenium: rda(55),
+  };
+}
