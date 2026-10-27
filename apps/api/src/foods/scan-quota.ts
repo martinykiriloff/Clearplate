@@ -18,9 +18,9 @@ export interface ScanQuota {
   date: string;
 }
 
-/** A reserved lookup. `scanId` is set when this call consumed a new slot. */
+/** A reserved lookup. `scanId` is null when no new slot was consumed (unlimited account or repeat product). */
 export interface ScanCharge {
-  date: string;
+  userId: string;
   scanId: string | null;
 }
 
@@ -38,68 +38,68 @@ export class ScanQuotaService {
   ) {}
 
   /**
-   * The day a lookup is charged to. The client's local date may run one day
-   * ahead of or behind the server's, so it is accepted, but it may never move
-   * backwards: once a user has been charged for a day, earlier days are closed.
-   * A legitimate device only ever moves forward, while a client that juggles
-   * yesterday, today and tomorrow to triple its allowance only ever burns the
-   * latest one.
+   * The day to charge for a free account, or null when the account is unlimited.
+   * The client's local date may be a day ahead of or behind the server's, so it
+   * is accepted, but it never moves backwards: once a later day has been charged
+   * it stays the bucket. That stops a client from replaying yesterday after
+   * tomorrow; spending the window in ascending order can still yield one extra
+   * allowance on the first day, which is an accepted trade-off against a rolling
+   * window that would break "resets at your midnight".
    */
-  private async bucketFor(userId: string, today: string): Promise<string> {
-    const [row] = await this.db
-      .select({ latest: sql<string | null>`max(${barcodeScans.date})` })
-      .from(barcodeScans)
-      .where(and(eq(barcodeScans.userId, userId), gt(barcodeScans.date, today)));
-    return row?.latest ?? today;
+  private async freeBucket(userId: string, today: string): Promise<string | null> {
+    const [unlimited, [row]] = await Promise.all([
+      this.entitlements.has(userId, 'barcode'),
+      this.db
+        .select({ latest: sql<string | null>`max(${barcodeScans.date})` })
+        .from(barcodeScans)
+        .where(and(eq(barcodeScans.userId, userId), gt(barcodeScans.date, today))),
+    ]);
+    return unlimited ? null : (row?.latest ?? today);
   }
 
-  private async countFor(userId: string, date: string): Promise<number> {
-    const [row] = await this.db
-      .select({ n: sql<number>`count(*)::int` })
+  /** Distinct lookups on `date`, and whether `code` is one of them. Runs on the database or inside a transaction. */
+  private async usage(executor: Pick<Database, 'select'>, userId: string, date: string, code: string | null): Promise<{ used: number; hasCode: boolean }> {
+    const [row] = await executor
+      .select({ used: sql<number>`count(*)::int`, hasCode: sql<boolean>`coalesce(bool_or(${barcodeScans.code} = ${code}), false)` })
       .from(barcodeScans)
       .where(and(eq(barcodeScans.userId, userId), eq(barcodeScans.date, date)));
-    return row?.n ?? 0;
+    return { used: row?.used ?? 0, hasCode: row?.hasCode ?? false };
   }
 
   async status(userId: string, today: string): Promise<ScanQuota> {
-    if (await this.entitlements.has(userId, 'barcode')) return { limit: null, used: 0, remaining: null, date: today };
-    const date = await this.bucketFor(userId, today);
-    const used = await this.countFor(userId, date);
+    const date = await this.freeBucket(userId, today);
+    if (date === null) return { limit: null, used: 0, remaining: null, date: today };
+    const { used } = await this.usage(this.db, userId, date, null);
     return { limit: FREE_SCANS_PER_DAY, used, remaining: Math.max(0, FREE_SCANS_PER_DAY - used), date };
   }
 
   /**
-   * Reserves a slot for `code` before the lookup. Inserting first and counting
-   * after makes concurrent requests safe: whichever insert pushes the day over
-   * the limit is rolled back, so the user never ends up above it.
-   * Throws 402 `scan_limit_reached` when the day is used up.
+   * Reserves a slot for `code` before the lookup. The check and the insert run
+   * under a per-user advisory lock, so concurrent requests are serialised: with
+   * one slot left exactly one wins and the rest get the 402. A blocked request
+   * writes nothing. Throws 402 `scan_limit_reached` when the day is used up.
    */
   async charge(userId: string, today: string, code: string): Promise<ScanCharge> {
-    if (await this.entitlements.has(userId, 'barcode')) return { date: today, scanId: null };
-    const date = await this.bucketFor(userId, today);
-    const [inserted] = await this.db.insert(barcodeScans).values({ userId, date, code }).onConflictDoNothing().returning({ id: barcodeScans.id });
-    // Already looked up today: free.
-    if (!inserted) return { date, scanId: null };
-    const used = await this.countFor(userId, date);
-    if (used <= FREE_SCANS_PER_DAY) return { date, scanId: inserted.id };
-    await this.refund({ date, scanId: inserted.id });
-    throw new HttpException(
-      {
-        statusCode: 402,
-        code: 'scan_limit_reached',
-        module: 'barcode',
-        limit: FREE_SCANS_PER_DAY,
-        used: FREE_SCANS_PER_DAY,
-        date,
-        message: `You have used today's ${FREE_SCANS_PER_DAY} free barcode lookups`,
-      },
-      HttpStatus.PAYMENT_REQUIRED,
-    );
+    const date = await this.freeBucket(userId, today);
+    if (date === null) return { userId, scanId: null };
+    return this.db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`barcode-scan:${userId}`}))`);
+      const { used, hasCode } = await this.usage(tx, userId, date, code);
+      if (hasCode) return { userId, scanId: null };
+      if (used >= FREE_SCANS_PER_DAY) {
+        throw new HttpException(
+          { statusCode: HttpStatus.PAYMENT_REQUIRED, code: 'scan_limit_reached', module: 'barcode', limit: FREE_SCANS_PER_DAY, used, date, message: `You have used today's ${FREE_SCANS_PER_DAY} free barcode lookups` },
+          HttpStatus.PAYMENT_REQUIRED,
+        );
+      }
+      const [inserted] = await tx.insert(barcodeScans).values({ userId, date, code }).returning({ id: barcodeScans.id });
+      return { userId, scanId: inserted.id };
+    });
   }
 
   /** Gives a reserved slot back, e.g. when the barcode matched nothing. */
   async refund(charge: ScanCharge): Promise<void> {
     if (!charge.scanId) return;
-    await this.db.delete(barcodeScans).where(eq(barcodeScans.id, charge.scanId));
+    await this.db.delete(barcodeScans).where(and(eq(barcodeScans.userId, charge.userId), eq(barcodeScans.id, charge.scanId)));
   }
 }

@@ -101,6 +101,17 @@ describe('foods', () => {
       expect((await agent.get(`/api/foods/scan/quota?today=${TODAY}`)).body).toMatchObject({ used: 2, remaining: 3, date: day(1) });
     });
 
+    it('lets exactly one of several parallel lookups take the last free slot', async () => {
+      const { agent } = await signedInAgent(app);
+      const codes = await ownFoods(agent, 8);
+      for (const code of codes.slice(0, 4)) await agent.get(`/api/foods/scan/${code}`).expect(200);
+
+      const results = await Promise.all(codes.slice(4).map((code) => agent.get(`/api/foods/scan/${code}`)));
+      expect(results.filter((r) => r.status === 200)).toHaveLength(1);
+      expect(results.filter((r) => r.status === 402)).toHaveLength(3);
+      expect((await agent.get('/api/foods/scan/quota')).body).toMatchObject({ used: 5, remaining: 0 });
+    });
+
     it('does not charge for an unknown barcode', async () => {
       const { agent } = await signedInAgent(app);
       await agent.get('/api/foods/scan/59009999999999').expect(404);

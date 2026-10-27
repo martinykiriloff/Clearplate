@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsDateString, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { and, desc, eq, ilike, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { Throttle } from '@nestjs/throttler';
 import { AuthUser, CurrentUser } from '../auth/decorators';
 import { clientToday } from '../common/dates';
 import { Database, InjectDb } from '../db/db.module';
@@ -132,6 +133,7 @@ export class FoodsService {
   constructor(
     @InjectDb() private readonly db: Database,
     @Inject(FOOD_PROVIDER) private readonly provider: FoodProvider,
+    private readonly scanQuota: ScanQuotaService,
   ) {}
 
   /** Catalogue foods plus the user's own custom foods. */
@@ -191,6 +193,20 @@ export class FoodsService {
     if (imported) return imported;
     const [existing] = await this.db.select(publicColumns).from(foods).where(and(eq(foods.barcode, code), isNull(foods.createdById))).limit(1);
     return existing;
+  }
+
+  /**
+   * Barcode lookup against the daily allowance: reserve a slot, look up, and give
+   * the slot back when nothing was found so an unknown barcode never counts.
+   */
+  async lookupByBarcode(userId: string, today: string, code: string) {
+    const charge = await this.scanQuota.charge(userId, today, code);
+    try {
+      return await this.byBarcode(userId, code);
+    } catch (err) {
+      await this.scanQuota.refund(charge);
+      throw err;
+    }
   }
 
   async byId(userId: string, id: string) {
@@ -261,17 +277,13 @@ export class FoodsController {
    * (the server cannot tell them apart, so both share one allowance). Free
    * accounts get FREE_SCANS_PER_DAY distinct products per day and a 402
    * `scan_limit_reached` after that; the Barcode module lifts the limit.
+   * Misses are refunded, so they are throttled instead: each one can reach Open Food Facts.
    */
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Get(['barcode/:code', 'scan/:code'])
-  async byBarcode(@CurrentUser() user: AuthUser, @Param('code') code: string, @Query() query: ScanQuery) {
+  byBarcode(@CurrentUser() user: AuthUser, @Param('code') code: string, @Query() query: ScanQuery) {
     if (!/^\d{8,14}$/.test(code)) throw new NotFoundException('No food with this barcode yet');
-    const charge = await this.scanQuota.charge(user.id, clientToday(query.today), code);
-    try {
-      return await this.foodsService.byBarcode(user.id, code);
-    } catch (err) {
-      await this.scanQuota.refund(charge);
-      throw err;
-    }
+    return this.foodsService.lookupByBarcode(user.id, clientToday(query.today), code);
   }
 
   @Get(':id')
