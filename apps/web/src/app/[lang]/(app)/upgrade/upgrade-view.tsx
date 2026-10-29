@@ -98,7 +98,10 @@ export function UpgradeView() {
                   </span>
                 )}
               </div>
-              <p className="text-sm text-muted-foreground">{desc}</p>
+              <p className="text-sm text-muted-foreground">
+                {desc}
+                {m === "barcode" && billing ? ` ${b.freeScansNote(billing.freeScansPerDay)}` : null}
+              </p>
               {!has(m) && buyable && buyable.intervals.length > 0 && (
                 <div className="mt-auto flex flex-wrap gap-2">
                   {buyable.intervals.map((iv) => (

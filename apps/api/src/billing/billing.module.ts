@@ -4,6 +4,7 @@ import { ApiExcludeEndpoint, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { IsIn, IsOptional } from 'class-validator';
 import type { Request } from 'express';
 import { AuthUser, CurrentUser, Public } from '../auth/decorators';
+import { FREE_SCANS_PER_DAY } from '../foods/scan-quota';
 import { EntitlementsService, PAID_MODULES } from './entitlements.service';
 import { ModuleGuard } from './requires-module';
 import { Interval, PlanId, PLANS, StripeService } from './stripe.service';
@@ -51,6 +52,8 @@ export class BillingController {
       entitlements: await this.entitlements.list(user.id),
       payments: this.stripe.enabled,
       plans: this.stripe.availablePlans(),
+      /** So the Premium page can quote the free allowance without hardcoding it. */
+      freeScansPerDay: FREE_SCANS_PER_DAY,
     };
   }
 

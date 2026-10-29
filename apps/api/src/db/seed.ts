@@ -4,11 +4,16 @@ import { Pool } from 'pg';
 import { foods, recipes } from './schema';
 import { FOOD_SEED } from './seed-data/foods';
 import { FOOD_NAMES_BG, SERVING_NAMES_BG } from './seed-data/foods.bg';
+import { COOKING_FOOD_NAMES_BG, COOKING_FOOD_SEED } from './seed-data/foods.cooking';
 import { FOOD_MICROS, Micros } from './seed-data/micros';
 import { FOOD_NUTRIENTS, RECIPE_NUTRIENTS } from './seed-data/nutrients';
 import { RECIPE_COMPOSITION } from './seed-data/recipe-composition';
 import { RECIPE_SEED } from './seed-data/recipes';
 import { RECIPES_BG } from './seed-data/recipes.bg';
+
+/** The whole seed catalogue: the starter foods plus the raw cooking ingredients used to estimate imported recipes. */
+const ALL_FOOD_SEED = [...FOOD_SEED, ...COOKING_FOOD_SEED];
+const ALL_FOOD_NAMES_BG: Record<string, string> = { ...FOOD_NAMES_BG, ...COOKING_FOOD_NAMES_BG };
 
 /** Per-serving micros of a recipe from its composition; keys known for every ingredient only. */
 export function recipeMicros(name: string): Micros | null {
@@ -44,11 +49,13 @@ export async function seed(databaseUrl: string): Promise<{ foods: number; recipe
     let insertedRecipes = 0;
     let translated = 0;
 
-    const [{ value: seedFoods }] = await db.select({ value: count() }).from(foods).where(eq(foods.source, 'seed'));
-    if (seedFoods === 0) {
-      const rows = FOOD_SEED.map(([name, category, kcal, proteinG, fatG, carbsG, fiberG, servingG, servingName]) => ({
+    // Insert whatever is missing by name, so foods added to the seed later reach existing databases too.
+    const existing = new Set((await db.select({ name: foods.name }).from(foods).where(eq(foods.source, 'seed'))).map((r) => r.name));
+    const missing = ALL_FOOD_SEED.filter(([name]) => !existing.has(name));
+    if (missing.length) {
+      const rows = missing.map(([name, category, kcal, proteinG, fatG, carbsG, fiberG, servingG, servingName]) => ({
         name,
-        nameBg: FOOD_NAMES_BG[name] ?? null,
+        nameBg: ALL_FOOD_NAMES_BG[name] ?? null,
         category,
         kcal,
         proteinG,
@@ -67,11 +74,13 @@ export async function seed(databaseUrl: string): Promise<{ foods: number; recipe
       }));
       await db.insert(foods).values(rows);
       insertedFoods = rows.length;
-    } else {
-      for (const [name, , , , , , , , servingName] of FOOD_SEED) {
+    }
+    if (existing.size) {
+      for (const [name, , , , , , , , servingName] of ALL_FOOD_SEED) {
+        if (!existing.has(name)) continue;
         const res = await db
           .update(foods)
-          .set({ nameBg: FOOD_NAMES_BG[name] ?? null, servingNameBg: servingName ? (SERVING_NAMES_BG[servingName] ?? null) : null })
+          .set({ nameBg: ALL_FOOD_NAMES_BG[name] ?? null, servingNameBg: servingName ? (SERVING_NAMES_BG[servingName] ?? null) : null })
           .where(and(eq(foods.source, 'seed'), eq(foods.name, name), isNull(foods.nameBg)))
           .returning({ id: foods.id });
         translated += res.length;

@@ -1,13 +1,15 @@
 import { Body, ConflictException, Controller, Get, Inject, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsDateString, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { and, desc, eq, ilike, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { Throttle } from '@nestjs/throttler';
 import { AuthUser, CurrentUser } from '../auth/decorators';
-import { RequiresModule } from '../billing/requires-module';
+import { clientToday } from '../common/dates';
 import { Database, InjectDb } from '../db/db.module';
 import { diaryEntries, foods } from '../db/schema';
 import { FOOD_PROVIDER, FoodProvider, OpenFoodFactsProvider } from './open-food-facts';
+import { ScanQuotaService } from './scan-quota';
 
 export class SearchFoodsQuery {
   @IsOptional()
@@ -21,6 +23,13 @@ export class SearchFoodsQuery {
   @Min(1)
   @Max(50)
   limit?: number;
+}
+
+/** The client's local date, so the daily lookup allowance resets at the user's midnight. */
+export class ScanQuery {
+  @IsOptional()
+  @IsDateString({ strict: true })
+  today?: string;
 }
 
 /** Custom food, values per 100 g. */
@@ -124,6 +133,7 @@ export class FoodsService {
   constructor(
     @InjectDb() private readonly db: Database,
     @Inject(FOOD_PROVIDER) private readonly provider: FoodProvider,
+    private readonly scanQuota: ScanQuotaService,
   ) {}
 
   /** Catalogue foods plus the user's own custom foods. */
@@ -185,6 +195,20 @@ export class FoodsService {
     return existing;
   }
 
+  /**
+   * Barcode lookup against the daily allowance: reserve a slot, look up, and give
+   * the slot back when nothing was found so an unknown barcode never counts.
+   */
+  async lookupByBarcode(userId: string, today: string, code: string) {
+    const charge = await this.scanQuota.charge(userId, today, code);
+    try {
+      return await this.byBarcode(userId, code);
+    } catch (err) {
+      await this.scanQuota.refund(charge);
+      throw err;
+    }
+  }
+
   async byId(userId: string, id: string) {
     const [food] = await this.db
       .select(publicColumns)
@@ -227,7 +251,10 @@ export class FoodsService {
 @ApiTags('foods')
 @Controller('foods')
 export class FoodsController {
-  constructor(private readonly foodsService: FoodsService) {}
+  constructor(
+    private readonly foodsService: FoodsService,
+    private readonly scanQuota: ScanQuotaService,
+  ) {}
 
   @Get()
   search(@CurrentUser() user: AuthUser, @Query() query: SearchFoodsQuery) {
@@ -239,19 +266,24 @@ export class FoodsController {
     return this.foodsService.recent(user.id);
   }
 
-  /** Free lookup by the number printed under a barcode. Camera scanning is the paid module. */
-  @Get('barcode/:code')
-  byBarcode(@CurrentUser() user: AuthUser, @Param('code') code: string) {
-    if (!/^\d{8,14}$/.test(code)) throw new NotFoundException('No food with this barcode yet');
-    return this.foodsService.byBarcode(user.id, code);
+  /** How many barcode lookups are left today (unlimited with the Barcode module). */
+  @Get('scan/quota')
+  quota(@CurrentUser() user: AuthUser, @Query() query: ScanQuery) {
+    return this.scanQuota.status(user.id, clientToday(query.today));
   }
 
-  /** Camera scan (Barcode module): same lookup, for the one-step scan-and-log flow. */
-  @RequiresModule('barcode')
-  @Get('scan/:code')
-  scan(@CurrentUser() user: AuthUser, @Param('code') code: string) {
+  /**
+   * Lookup by barcode, whether the camera read it or the user typed the number
+   * (the server cannot tell them apart, so both share one allowance). Free
+   * accounts get FREE_SCANS_PER_DAY distinct products per day and a 402
+   * `scan_limit_reached` after that; the Barcode module lifts the limit.
+   * Misses are refunded, so they are throttled instead: each one can reach Open Food Facts.
+   */
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Get(['barcode/:code', 'scan/:code'])
+  byBarcode(@CurrentUser() user: AuthUser, @Param('code') code: string, @Query() query: ScanQuery) {
     if (!/^\d{8,14}$/.test(code)) throw new NotFoundException('No food with this barcode yet');
-    return this.foodsService.byBarcode(user.id, code);
+    return this.foodsService.lookupByBarcode(user.id, clientToday(query.today), code);
   }
 
   @Get(':id')
@@ -267,7 +299,7 @@ export class FoodsController {
 
 @Module({
   controllers: [FoodsController],
-  providers: [FoodsService, { provide: FOOD_PROVIDER, useClass: OpenFoodFactsProvider }],
+  providers: [FoodsService, ScanQuotaService, { provide: FOOD_PROVIDER, useClass: OpenFoodFactsProvider }],
   exports: [FoodsService],
 })
 export class FoodsModule {}
