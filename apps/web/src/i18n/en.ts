@@ -289,6 +289,10 @@ export const en = {
     macros: (kcal: string, p: string, f: string, c: string) => `${kcal} kcal · ${p} g P · ${f} g F · ${c} g C`,
     perServingLine: (kcal: string, p: string, f: string, c: string) =>
       `Per serving: ${kcal} kcal · ${p} g protein · ${f} g fat · ${c} g carbs`,
+    servings: (n: string) => `${n} servings`,
+    source: "Source",
+    estimatedNote: (pct: string) => `Macros are estimated from the ingredient list; ${pct} of the ingredients matched our food catalogue. Treat them as a guide, not a label.`,
+    openSource: "Open the original recipe",
   },
   progress: {
     title: "Progress",

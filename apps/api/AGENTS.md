@@ -18,6 +18,7 @@ src/
   billing/           EntitlementsService (Stripe + ENTITLEMENT_GRANTS), @RequiresModule(), Stripe webhooks
   profile/           questionnaire -> targets (via @clearplate/targets)
   foods/ recipes/ diary/ weights/   feature modules
+  import/            recipe importer CLI (`pnpm import:recipes`): polite crawler, Bulgarian ingredient parser, catalogue matcher, macro estimate
   health/            /api/health
 drizzle/             generated SQL migrations + meta snapshots (committed)
 test/                e2e suites (*.e2e-spec.ts), app.ts harness, fixtures.ts
@@ -95,6 +96,15 @@ These are the bar for every change. "Matches the file next to it" is the tie-bre
 - Per-user data is always scoped by `userId` in the query. Another user's row is a `404`, never a `403` (no existence leak). Cross-user uniqueness (e.g. barcodes) is per user.
 - Errors: throw Nest `HttpException`s with a plain English `message`; the web only displays it in English and uses its own translation otherwise. Put structured data in the body for anything the client must branch on.
 - Add `@ApiTags('<module>')` on controllers; Swagger is served at `/api/docs`.
+
+## Recipe import
+
+`pnpm --filter @clearplate/api import:recipes -- --source all --limit 500` crawls the sources in `src/import/sources/` (receptite.com, gotvetesmen.com, 1001recepti.com), estimates kcal/protein/fat/carbs per serving from the ingredient list and upserts public recipes keyed by `source_url`. Rules of the importer:
+
+- Only sources whose robots.txt allows general crawling and does not opt out AI agents by name. `HostCrawler` re-checks robots.txt on every run, identifies itself, makes one request per second per host and caches pages in `.import-cache/` (gitignored), so `--refresh --offline` re-parses everything after a parser or dictionary fix without touching the sites.
+- Nutrition is estimated, never copied: `ingredient-parser.ts` reads amounts, `ingredient-dictionary.ts` maps Bulgarian words to seed foods, `recipe-nutrition.ts` weighs and sums. A recipe is imported only when `--min-coverage` (default 0.6) of its ingredients matched and the result is plausible; `estimate_coverage` is stored and shown to users.
+- `--explain <url>` prints how each line was read, matched and weighed. The run report lists the most frequent unmatched ingredients: extend the dictionary (and `seed-data/foods.cooking.ts` when a food is missing), then `--refresh --offline`, which re-parses every cached page and deletes previously imported recipes that no longer pass.
+- Imported text stays Bulgarian in both language columns (the sources are Bulgarian only) and carries `source_name`/`source_url` for attribution. The recipe text itself is the source's copyright: review the licensing position before shipping imported recipes to the public.
 
 ## Database
 

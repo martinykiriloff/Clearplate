@@ -203,6 +203,13 @@ export interface Recipe {
   proteinG: number;
   fatG: number;
   carbsG: number;
+  /** Cuisine as the source states it; null = unknown. */
+  cuisine: string | null;
+  /** Host an imported recipe came from (e.g. "receptite.com"); null = authored in Clearplate. */
+  sourceName: string | null;
+  sourceUrl: string | null;
+  /** 0..1 share of the ingredients matched to the catalogue when the macros were estimated; null = authored macros. */
+  estimateCoverage: number | null;
   ownerId: string | null;
 }
 

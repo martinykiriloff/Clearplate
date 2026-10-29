@@ -65,6 +65,16 @@ pnpm dev:web        # :3000
 
 Schema changes: edit `apps/api/src/db/schema.ts`, then `pnpm --filter @clearplate/api db:generate`.
 
+### Importing recipes
+
+```bash
+pnpm --filter @clearplate/api import:recipes -- --source all --limit 500   # receptite.com, gotvetesmen.com, 1001recepti.com
+pnpm --filter @clearplate/api import:recipes -- --explain <recipe url>     # how one recipe's macros were derived
+pnpm --filter @clearplate/api import:recipes -- --refresh --offline        # re-estimate everything from the page cache, dropping recipes that no longer pass
+```
+
+The importer honours robots.txt (sites that opt out AI crawlers are skipped), fetches one page per second per host and keeps a page cache in `apps/api/.import-cache/`. Calories, protein, fat and carbs are estimated from the ingredient list against the seed catalogue; each imported recipe stores its source URL and how much of its ingredients were recognised. See `apps/api/AGENTS.md` for the rules.
+
 ## Tests
 
 ```bash

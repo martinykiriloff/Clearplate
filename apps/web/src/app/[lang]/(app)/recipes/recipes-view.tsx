@@ -73,9 +73,11 @@ export function RecipesView() {
               <div className="text-xs font-semibold tracking-[0.06em] text-muted-foreground uppercase">
                 {t.meals[recipe.mealType]}
                 {recipe.ownerId ? r.yours : ""}
+                {recipe.sourceName ? ` · ${recipe.sourceName}` : ""}
               </div>
               <h2 className="text-lg leading-snug font-semibold">{pick(recipe.name, recipe.nameBg)}</h2>
               <p className="tabular text-sm">{r.macros(n(recipe.kcal), n(recipe.proteinG), n(recipe.fatG), n(recipe.carbsG))}</p>
+              {recipe.estimateCoverage != null && <p className="text-xs text-muted-foreground">{r.perServing} · {r.servings(n(recipe.servings))}</p>}
               <Button variant="outline" className="mt-auto self-start" onClick={() => setOpen(recipe)}>
                 {r.viewAdd}
               </Button>
@@ -125,6 +127,7 @@ function RecipeDetail({ recipe, date, onDone }: { recipe: Recipe; date: string; 
         <h3 className="text-sm font-semibold">{r.method}</h3>
         <p className="mt-1 text-[15px] leading-relaxed text-muted-foreground">{pick(recipe.method, recipe.methodBg)}</p>
       </div>
+      <RecipeProvenance recipe={recipe} />
       <div className="flex flex-col gap-2">
         <Label htmlFor="detail-meal">{r.addTo}</Label>
         <NativeSelect id="detail-meal" value={meal} onChange={(e) => setMeal(e.target.value as Meal)}>
@@ -141,5 +144,25 @@ function RecipeDetail({ recipe, date, onDone }: { recipe: Recipe; date: string; 
         </Button>
       </DialogFooter>
     </form>
+  );
+}
+
+/** Where an imported recipe comes from and how far its macros can be trusted. Authored recipes render nothing. */
+function RecipeProvenance({ recipe }: { recipe: Recipe }) {
+  const { t, n } = useI18n();
+  const r = t.recipes;
+  if (recipe.estimateCoverage == null && !recipe.sourceUrl) return null;
+  return (
+    <div className="flex flex-col gap-1 rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground">
+      {recipe.estimateCoverage != null && <p>{r.estimatedNote(`${n(Math.round(recipe.estimateCoverage * 100))}%`)}</p>}
+      {recipe.sourceUrl && recipe.sourceName && (
+        <p>
+          {r.source}:{" "}
+          <a href={recipe.sourceUrl} target="_blank" rel="noopener noreferrer nofollow" className="underline underline-offset-2" aria-label={r.openSource}>
+            {recipe.sourceName}
+          </a>
+        </p>
+      )}
+    </div>
   );
 }

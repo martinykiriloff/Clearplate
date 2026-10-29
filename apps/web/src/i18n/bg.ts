@@ -288,6 +288,10 @@ export const bg: Dict = {
     addServing: "Добави 1 порция",
     macros: (kcal, p, f, c) => `${kcal} kcal · ${p} г П · ${f} г М · ${c} г В`,
     perServingLine: (kcal, p, f, c) => `На порция: ${kcal} kcal · ${p} г протеин · ${f} г мазнини · ${c} г въглехидрати`,
+    servings: (n) => `${n} порции`,
+    source: "Източник",
+    estimatedNote: (pct) => `Макросите са изчислени от списъка със съставки; ${pct} от съставките са разпознати в нашия каталог. Ориентир, не етикет.`,
+    openSource: "Отвори оригиналната рецепта",
   },
   progress: {
     title: "Прогрес",

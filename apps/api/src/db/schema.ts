@@ -165,6 +165,17 @@ export const recipes = pgTable(
     sodiumMg: real('sodium_mg'),
     /** Per serving. */
     micros: jsonb('micros').$type<Record<string, number>>(),
+    /** Cuisine as the source states it (e.g. "Българска"); null = unknown. */
+    cuisine: text('cuisine'),
+    /** Host the recipe was imported from (e.g. "receptite.com"); null = authored here. */
+    sourceName: text('source_name'),
+    /** Canonical page of an imported recipe; the attribution link and the idempotency key of re-imports. */
+    sourceUrl: text('source_url'),
+    /**
+     * Share (0..1) of the ingredient mass that was matched to the food catalogue when the
+     * macros were estimated from the ingredient list. null = macros were authored, not estimated.
+     */
+    estimateCoverage: real('estimate_coverage'),
     /** null = public catalogue recipe */
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'cascade' }),
     ...timestamps,
@@ -174,6 +185,7 @@ export const recipes = pgTable(
     index('recipes_owner_idx').on(t.ownerId),
     index('recipes_name_trgm_idx').using('gin', sql`${t.name} gin_trgm_ops`),
     index('recipes_name_bg_trgm_idx').using('gin', sql`${t.nameBg} gin_trgm_ops`),
+    uniqueIndex('recipes_source_url_uq').on(t.sourceUrl).where(sql`${t.sourceUrl} is not null`),
   ],
 );
 
