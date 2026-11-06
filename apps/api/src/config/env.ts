@@ -15,6 +15,7 @@ export function validateEnv(raw: Record<string, unknown>): Record<string, unknow
     ...env,
     API_PORT: env.API_PORT ?? '4000',
     JWT_EXPIRES_IN: env.JWT_EXPIRES_IN ?? '7d',
-    WEB_URL: env.WEB_URL ?? 'http://localhost:3000',
+    // Vercel previews have no fixed domain: send OAuth and Stripe redirects back to the deployment itself.
+    WEB_URL: env.WEB_URL ?? (env.VERCEL_URL ? `https://${env.VERCEL_URL}` : 'http://localhost:3000'),
   };
 }

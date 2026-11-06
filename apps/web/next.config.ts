@@ -7,9 +7,12 @@ import type { NextConfig } from "next";
  * callbacks land on the web origin.
  *
  * Rewrites are resolved at build time: in Docker the API is reachable as
- * http://api:4000 (see Dockerfile build arg), locally on :4000.
+ * http://api:4000 (see Dockerfile build arg), locally on :4000. On Vercel the
+ * top-level services rewrite in vercel.json sends /api to the API before this
+ * app sees it, and there is no build-time API address to proxy to.
  */
 const apiInternalUrl = (process.env.API_INTERNAL_URL ?? "http://localhost:4000").replace(/\/$/, "");
+const proxyApi = !process.env.VERCEL;
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -29,7 +32,8 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     // beforeFiles: /api must win over the [lang] dynamic segment.
-    return { beforeFiles: [{ source: "/api/:path*", destination: `${apiInternalUrl}/api/:path*` }], afterFiles: [], fallback: [] };
+    const beforeFiles = proxyApi ? [{ source: "/api/:path*", destination: `${apiInternalUrl}/api/:path*` }] : [];
+    return { beforeFiles, afterFiles: [], fallback: [] };
   },
   async headers() {
     return [

@@ -65,6 +65,16 @@ pnpm dev:web        # :3000
 
 Schema changes: edit `apps/api/src/db/schema.ts`, then `pnpm --filter @clearplate/api db:generate`.
 
+### Importing recipes
+
+```bash
+pnpm --filter @clearplate/api import:recipes -- --source all --limit 500   # receptite.com, gotvetesmen.com, 1001recepti.com
+pnpm --filter @clearplate/api import:recipes -- --explain <recipe url>     # how one recipe's macros were derived
+pnpm --filter @clearplate/api import:recipes -- --refresh --offline        # re-estimate everything from the page cache, dropping recipes that no longer pass
+```
+
+The importer honours robots.txt (sites that opt out AI crawlers are skipped), fetches one page per second per host and keeps a page cache in `apps/api/.import-cache/`. Calories, protein, fat and carbs are estimated from the ingredient list against the seed catalogue; each imported recipe stores its source URL and how much of its ingredients were recognised. See `apps/api/AGENTS.md` for the rules.
+
 ## Tests
 
 ```bash
@@ -96,10 +106,12 @@ Adding a language: add it to `LOCALES` in `apps/web/src/i18n/config.ts`, add a d
 - Email + password auth, optional Google / Facebook, account deletion (GDPR Art. 17)
 - 5-step questionnaire with live plan preview, explicit health-data consent, 18+ gate
 - Today: Goal − Food = Left, macros, next best food, weight trend, streak
-- Diary: search (typo tolerant), recent, recipes, quick estimate, lookup by barcode number; edit, remove, undo
+- Diary: search (typo tolerant), recent, recipes, quick estimate, barcode lookup; edit, remove, undo
+- Barcode lookup by camera or typed number: 5 distinct products a day for free (`FREE_SCANS_PER_DAY`),
+  unlimited with the Barcode module. Both routes share one allowance, since the server cannot tell them apart.
 - Recipes with a "fits what's left today" filter; Progress with smoothed weight trend
 
-Not yet: camera barcode scanning (paid module), payments, adaptive target correction, mobile apps,
+Not yet: adaptive target correction, mobile apps,
 licensed food database import. The starter catalogue (134 foods, 30 recipes) uses rounded USDA-style
 reference values and is marked unverified.
 

@@ -38,7 +38,8 @@ export class CookieStateStore {
 /**
  * Social providers are optional: each one is enabled only when its credentials
  * are present in the environment. OAuth callbacks go through the web origin
- * (Next.js proxies /api), so the session cookie is first-party.
+ * (/api is routed to this API by the Next.js proxy, or by the services rewrite
+ * on Vercel), so the session cookie is first-party.
  */
 export function callbackUrl(config: ConfigService, provider: SocialProvider): string {
   const base = config.get<string>('OAUTH_CALLBACK_BASE') ?? config.get<string>('WEB_URL') ?? 'http://localhost:3000';

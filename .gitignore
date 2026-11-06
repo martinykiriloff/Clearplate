@@ -10,3 +10,6 @@ coverage/
 .DS_Store
 *.log
 .turbo/
+.pnpm-store/
+.import-cache/
+.vercel/

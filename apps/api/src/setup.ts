@@ -8,10 +8,13 @@ import helmet from 'helmet';
 export function configureApp(app: INestApplication): void {
   const config = app.get(ConfigService);
 
-  // The browser reaches the API through the Next.js proxy (and possibly a load
-  // balancer): trust X-Forwarded-For from private networks only, so rate limits
-  // apply per real client instead of to everyone behind the proxy.
-  (app.getHttpAdapter().getInstance() as { set: (k: string, v: unknown) => void }).set('trust proxy', 'loopback, linklocal, uniquelocal');
+  // The browser reaches the API through a proxy, so rate limits must key on
+  // X-Forwarded-For or everyone behind the proxy shares one bucket. Behind the
+  // Next.js proxy (and possibly a load balancer) trust it from private networks
+  // only. Vercel's edge overwrites any client-sent X-Forwarded-For, so on
+  // Vercel it is trusted as-is.
+  const trustProxy = process.env.VERCEL ? true : 'loopback, linklocal, uniquelocal';
+  (app.getHttpAdapter().getInstance() as { set: (k: string, v: unknown) => void }).set('trust proxy', trustProxy);
   app.setGlobalPrefix('api');
   app.use(helmet());
   app.use(cookieParser());

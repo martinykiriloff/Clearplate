@@ -18,6 +18,12 @@ describe('recipes', () => {
     expect(density).toEqual([...density].sort((a, b) => b - a));
   });
 
+  it('marks catalogue recipes as authored: no source and no estimate coverage', async () => {
+    const { agent } = await signedInAgent(app);
+    const [first] = (await agent.get('/api/recipes?limit=1').expect(200)).body;
+    expect(first).toMatchObject({ sourceName: null, sourceUrl: null, estimateCoverage: null, cuisine: null });
+  });
+
   it('creates private recipes that only the owner can see or delete', async () => {
     const { agent } = await signedInAgent(app);
     const other = await signedInAgent(app);
