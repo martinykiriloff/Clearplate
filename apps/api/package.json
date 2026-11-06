@@ -10,6 +10,7 @@
     "test:e2e": "jest --config test/jest-e2e.json --runInBand",
     "lint": "tsc --noEmit",
     "seed": "ts-node --transpile-only src/db/seed.ts",
+    "import:off": "ts-node --transpile-only src/db/import-off.ts",
     "seed:prod": "node dist/db/seed.js",
     "import:recipes": "ts-node --transpile-only src/import/import-recipes.ts",
     "db:generate": "drizzle-kit generate",
