@@ -4,11 +4,18 @@
     "api": {
       "root": "apps/api",
       "framework": "nestjs",
-      "buildCommand": "pnpm --filter @clearplate/targets build && pnpm --filter @clearplate/api build"
+      "installCommand": "sh ../../scripts/vercel-install.sh",
+      "buildCommand": "sh ../../scripts/vercel-build-api.sh",
+      "functions": {
+        "src/main.ts": {
+          "includeFiles": "node_modules/swagger-ui-dist/**"
+        }
+      }
     },
     "web": {
       "root": "apps/web",
       "framework": "nextjs",
+      "installCommand": "sh ../../scripts/vercel-install.sh",
       "buildCommand": "pnpm --filter @clearplate/targets build && pnpm --filter @clearplate/web build"
     }
   },
